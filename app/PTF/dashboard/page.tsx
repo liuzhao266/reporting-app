@@ -35,25 +35,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { MediaViewer } from "@/components/media-viewer"
 import { SocialMediaLinks } from "@/components/social-media-links"
-
-interface AdminReport {
-  id: string
-  description: string
-  media_urls: string[]
-  status: "pending" | "approved" | "rejected"
-  created_at: string
-  chadabaz: {
-    name: string
-    location: string
-    party: string
-    facebook_url?: string
-    twitter_url?: string
-    instagram_url?: string
-    linkedin_url?: string
-    youtube_url?: string
-    tiktok_url?: string
-  }
-}
+import type { AdminReport } from "@/lib/types" // Import AdminReport type
 
 export default function AdminDashboard() {
   const [reports, setReports] = useState<AdminReport[]>([])
@@ -70,6 +52,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     checkAuth()
     loadReports()
+    // No need for router.refresh() here, loadReports() handles initial fetch
   }, [])
 
   const checkAuth = async () => {
@@ -121,13 +104,12 @@ export default function AdminDashboard() {
       const result = await updateReportStatus(reportId, "approved")
 
       if (result.success) {
-        setReports((prev) =>
-          prev.map((report) => (report.id === reportId ? { ...report, status: "approved" } : report)),
-        )
         toast({
           title: "সফল!",
           description: result.message,
         })
+        router.refresh() // Invalidate cache and trigger re-render of server components
+        await loadReports() // Explicitly re-fetch data for this client component
       } else {
         toast({
           title: "ত্রুটি!",
@@ -152,13 +134,13 @@ export default function AdminDashboard() {
       const result = await updateReportStatus(reportId, "rejected")
 
       if (result.success) {
-        setReports((prev) =>
-          prev.map((report) => (report.id === reportId ? { ...report, status: "rejected" } : report)),
-        )
         toast({
           title: "সফল!",
           description: result.message,
+          variant: "destructive",
         })
+        router.refresh() // Invalidate cache and trigger re-render of server components
+        await loadReports() // Explicitly re-fetch data for this client component
       } else {
         toast({
           title: "ত্রুটি!",
@@ -183,11 +165,12 @@ export default function AdminDashboard() {
       const result = await deleteReport(reportId)
 
       if (result.success) {
-        setReports((prev) => prev.filter((report) => report.id !== reportId))
         toast({
           title: "সফল!",
           description: result.message,
         })
+        router.refresh() // Invalidate cache and trigger re-render of server components
+        await loadReports() // Explicitly re-fetch data for this client component
       } else {
         toast({
           title: "ত্রুটি!",
@@ -360,36 +343,39 @@ export default function AdminDashboard() {
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900 bangla-text">👤 {report.chadabaz.name}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900 bangla-text">
+                            👤 {report.chadabaz?.name || "অজানা"}
+                          </h3>
                           {getStatusBadge(report.status)}
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div className="flex items-center text-gray-600">
                             <MapPin className="h-4 w-4 mr-2" />
-                            <span className="bangla-text">📍 এলাকা: {report.chadabaz.location}</span>
+                            <span className="bangla-text">📍 এলাকা: {report.chadabaz?.location || "অজানা"}</span>
                           </div>
                           <div className="flex items-center text-gray-600">
                             <Flag className="h-4 w-4 mr-2" />
-                            <span className="bangla-text">🏳️ দল: {report.chadabaz.party}</span>
+                            <span className="bangla-text">🏳️ দল: {report.chadabaz?.party_name || "অজানা"}</span>{" "}
+                            {/* Use party_name */}
                           </div>
                         </div>
 
                         {/* Social media links */}
-                        {(report.chadabaz.facebook_url ||
-                          report.chadabaz.twitter_url ||
-                          report.chadabaz.instagram_url ||
-                          report.chadabaz.linkedin_url ||
-                          report.chadabaz.youtube_url ||
-                          report.chadabaz.tiktok_url) && (
+                        {(report.chadabaz?.facebook_url ||
+                          report.chadabaz?.twitter_url ||
+                          report.chadabaz?.instagram_url ||
+                          report.chadabaz?.linkedin_url ||
+                          report.chadabaz?.youtube_url ||
+                          report.chadabaz?.tiktok_url) && (
                           <div className="mb-4">
                             <h5 className="text-sm font-medium text-gray-700 mb-2 bangla-text">সোশ্যাল মিডিয়া:</h5>
                             <SocialMediaLinks
-                              facebook_url={report.chadabaz.facebook_url}
-                              twitter_url={report.chadabaz.twitter_url}
-                              instagram_url={report.chadabaz.instagram_url}
-                              linkedin_url={report.chadabaz.linkedin_url}
-                              youtube_url={report.chadabaz.youtube_url}
-                              tiktok_url={report.chadabaz.tiktok_url}
+                              facebook_url={report.chadabaz?.facebook_url}
+                              twitter_url={report.chadabaz?.twitter_url}
+                              instagram_url={report.chadabaz?.instagram_url}
+                              linkedin_url={report.chadabaz?.linkedin_url}
+                              youtube_url={report.chadabaz?.youtube_url}
+                              tiktok_url={report.chadabaz?.tiktok_url}
                               size="sm"
                               showLabels={true}
                             />

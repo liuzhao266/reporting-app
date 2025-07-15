@@ -9,14 +9,15 @@ import { MediaViewer } from "@/components/media-viewer"
 import { MapPin, Users, Calendar, FileText, Play, Eye } from "lucide-react"
 import { notFound } from "next/navigation"
 import { SocialMediaLinks } from "@/components/social-media-links"
+import type { ChadabazWithReports } from "@/lib/types" // Import ChadabazWithReports
 
 interface ProfilePageProps {
-  params: Promise<{ id: string }>
+  params: { id: string } // Changed to direct object for params
 }
 
 export default async function ProfilePage({ params }: ProfilePageProps) {
-  const { id } = await params
-  const profile = await getChadabazProfile(id)
+  const { id } = params
+  const profile: ChadabazWithReports | null = await getChadabazProfile(id) // Explicitly type profile
 
   if (!profile) {
     notFound()
@@ -66,7 +67,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
                     <div className="flex items-center justify-center md:justify-start">
                       <span className="bangla-text mr-2">🏳️ রাজনৈতিক দল:</span>
                       <Badge variant="outline" className="bangla-text">
-                        {profile.party}
+                        {profile.party_name} {/* Use party_name */}
                       </Badge>
                     </div>
 

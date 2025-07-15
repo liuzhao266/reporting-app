@@ -17,7 +17,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<Chadabaz[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedParty, setSelectedParty] = useState("all")
+  const [selectedParty, setSelectedParty] = useState("all") // This will still hold the party name
   const [sortBy, setSortBy] = useState("reports-high") // "reports-high", "reports-low", "date-new", "date-old"
 
   const handleSearch = async () => {

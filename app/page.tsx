@@ -6,6 +6,8 @@ import { Navigation } from "@/components/navigation"
 import { Shield, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Chadabaz } from "@/lib/types"
+import { ChadabazCard } from "@/components/chadabaz-card" // Import ChadabazCard
+import { PartyStatistics } from "@/components/party-statistics" // Import PartyStatistics
 
 export default function HomePage() {
   const [chadabazList, setChadabazList] = useState<Chadabaz[]>([])
@@ -178,68 +180,7 @@ export default function HomePage() {
         </div>
 
         {/* Party Statistics Section */}
-        {partyStats.length > 0 && (
-          <Card className="mb-8 border-red-200 bg-red-50">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2 text-red-800 bangla-text">
-                <Shield className="h-6 w-6" />
-                <span>দলীয় পরিসংখ্যান</span>
-              </CardTitle>
-              <p className="text-red-700 text-sm bangla-text">প্রতিটি রাজনৈতিক দলের সদস্যদের বিরুদ্ধে মোট রিপোর্ট সংখ্যা</p>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {partyStats.slice(0, 3).map((stat, index) => (
-                  <div
-                    key={stat.party}
-                    className={`p-4 rounded-lg border-2 ${
-                      index === 0
-                        ? "border-red-300 bg-red-100"
-                        : index === 1
-                          ? "border-orange-300 bg-orange-100"
-                          : "border-yellow-300 bg-yellow-100"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <span
-                        className={`text-sm font-medium px-2 py-1 rounded ${
-                          index === 0
-                            ? "bg-red-200 text-red-700"
-                            : index === 1
-                              ? "bg-orange-200 text-orange-700"
-                              : "bg-yellow-200 text-yellow-700"
-                        }`}
-                      >
-                        #{index + 1}
-                      </span>
-                    </div>
-
-                    <h3 className="font-semibold text-gray-900 mb-3 bangla-text text-sm leading-tight">{stat.party}</h3>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 bangla-text">মোট রিপোর্ট</span>
-                        <span className="font-bold text-lg text-red-600">{stat.totalReports}</span>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600 bangla-text">সদস্য সংখ্যা</span>
-                        <span className="font-semibold text-blue-600">{stat.memberCount}</span>
-                      </div>
-
-                      <div className="pt-2 border-t border-gray-300">
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span className="bangla-text">গড় রিপোর্ট/সদস্য</span>
-                          <span className="font-medium">{(stat.totalReports / stat.memberCount).toFixed(1)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {partyStats.length > 0 && <PartyStatistics partyStats={partyStats} />}
 
         {/* Chadabaz Grid */}
         <div className="mb-8">
@@ -274,46 +215,7 @@ export default function HomePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {sortedChadabazList.map((chadabaz) => (
-                <div key={chadabaz.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-                  <div className="flex items-center space-x-4 mb-4">
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
-                      {chadabaz.profile_pic_url ? (
-                        <img
-                          src={chadabaz.profile_pic_url || "/placeholder.svg"}
-                          alt={chadabaz.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-500">
-                          <Shield className="h-8 w-8" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-lg text-gray-900 truncate bangla-text">{chadabaz.name}</h3>
-                      <p className="text-gray-600 truncate bangla-text">{chadabaz.location}</p>
-                    </div>
-                  </div>
-
-                  <div className="mb-4 space-y-2">
-                    <span className="inline-block px-2 py-1 text-sm bg-gray-100 text-gray-700 rounded bangla-text">
-                      {chadabaz.party}
-                    </span>
-
-                    {chadabaz.report_count && (
-                      <div className="flex items-center text-sm text-red-600 bg-red-50 px-2 py-1 rounded-full w-fit">
-                        <span className="bangla-text">{chadabaz.report_count}টি রিপোর্ট</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => (window.location.href = `/profile/${chadabaz.id}`)}
-                    className="w-full bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 transition-colors bangla-text"
-                  >
-                    বিস্তারিত দেখুন
-                  </button>
-                </div>
+                <ChadabazCard key={chadabaz.id} chadabaz={chadabaz} />
               ))}
             </div>
           )}

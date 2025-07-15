@@ -15,13 +15,14 @@ import { createClient } from "@/utils/supabase/client"
 import { Upload, FileText, AlertCircle, Plus, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { submitReport } from "@/lib/actions" // Ensure submitReport is imported
 
 export default function ReportPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     location: "",
-    party: "",
+    party: "", // Initialize party as an empty string (will hold party name)
     description: "",
   })
   const [mediaFiles, setMediaFiles] = useState<File[]>([])
@@ -43,41 +44,46 @@ export default function ReportPage() {
     setMediaFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const uploadFile = async (file: File, folder: string): Promise<string | null> => {
-    try {
-      const fileExt = file.name.split(".").pop()
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `${folder}/${fileName}`
-
-      const { error } = await supabase.storage.from("reports").upload(filePath, file)
-
-      if (error) {
-        console.error("Upload error:", error)
-        return null
-      }
-
-      const { data } = supabase.storage.from("reports").getPublicUrl(filePath)
-
-      return data.publicUrl
-    } catch (error) {
-      console.error("File upload failed:", error)
-      return null
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsSubmitting(true)
 
-    const formData = new FormData(e.currentTarget)
+    // Client-side validation for required fields
+    if (!formData.name.trim() || !formData.location.trim() || !formData.description.trim()) {
+      toast({
+        title: "ত্রুটি!",
+        description: "অনুগ্রহ করে সকল প্রয়োজনীয় ফিল্ড পূরণ করুন।",
+        variant: "destructive",
+      })
+      setIsSubmitting(false)
+      return
+    }
+
+    // Client-side validation for party
+    if (!formData.party || formData.party === "") {
+      toast({
+        title: "ত্রুটি!",
+        description: "অনুগ্রহ করে রাজনৈতিক দল নির্বাচন করুন।",
+        variant: "destructive",
+      })
+      setIsSubmitting(false)
+      return
+    }
+
+    const form = e.currentTarget
+    const data = new FormData(form)
+
+    // Explicitly append the party value from state, as shadcn Select is not a native input
+    // that FormData automatically picks up by name.
+    data.append("party", formData.party)
 
     // Add media files to form data
     mediaFiles.forEach((file, index) => {
-      formData.append(`media_${index}`, file)
+      data.append(`media_${index}`, file)
     })
 
     try {
-      const result = await submitReport(formData)
+      const result = await submitReport(data)
 
       if (result.success) {
         toast({
@@ -107,124 +113,6 @@ export default function ReportPage() {
       })
     } finally {
       setIsSubmitting(false)
-    }
-  }
-
-  async function submitReport(formData: FormData): Promise<{ success: boolean; message: string }> {
-    if (!supabase) {
-      console.log("Mock submission - Supabase not configured")
-      return {
-        success: true,
-        message: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে। (ডেমো মোড - Supabase কনফিগার করুন)",
-      }
-    }
-
-    const name = formData.get("name") as string
-    const location = formData.get("location") as string
-    const party = formData.get("party") as string
-    const description = formData.get("description") as string
-    const profilePicture = formData.get("profile_picture") as File
-
-    // Get social media URLs
-    const facebook_url = formData.get("facebook_url") as string
-    const twitter_url = formData.get("twitter_url") as string
-    const instagram_url = formData.get("instagram_url") as string
-    const linkedin_url = formData.get("linkedin_url") as string
-    const youtube_url = formData.get("youtube_url") as string
-    const tiktok_url = formData.get("tiktok_url") as string
-
-    try {
-      // Check if chadabaz already exists
-      const { data: existingChadabaz } = await supabase
-        .from("chadabaz")
-        .select("id")
-        .eq("name", name)
-        .eq("location", location)
-        .single()
-
-      let chadabazId: string
-
-      if (existingChadabaz) {
-        chadabazId = existingChadabaz.id
-      } else {
-        // Upload profile picture if provided
-        let profilePicUrl = null
-        if (profilePicture && profilePicture.size > 0) {
-          const fileExt = profilePicture.name.split(".").pop()
-          const fileName = `profile_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-
-          const { error: uploadError } = await supabase.storage
-            .from("chadabaz-media")
-            .upload(`profiles/${fileName}`, profilePicture)
-
-          if (!uploadError) {
-            const { data } = supabase.storage.from("chadabaz-media").getPublicUrl(`profiles/${fileName}`)
-            profilePicUrl = data.publicUrl
-          }
-        }
-
-        // Create new chadabaz with social media URLs
-        const { data: newChadabaz, error: chadabazError } = await supabase
-          .from("chadabaz")
-          .insert({
-            name,
-            location,
-            party,
-            profile_pic_url: profilePicUrl,
-            facebook_url: facebook_url || null,
-            twitter_url: twitter_url || null,
-            instagram_url: instagram_url || null,
-            linkedin_url: linkedin_url || null,
-            youtube_url: youtube_url || null,
-            tiktok_url: tiktok_url || null,
-          })
-          .select("id")
-          .single()
-
-        if (chadabazError) {
-          throw chadabazError
-        }
-
-        chadabazId = newChadabaz.id
-      }
-
-      // Upload media files
-      const mediaUrls: string[] = []
-      let index = 0
-      while (formData.get(`media_${index}`)) {
-        const file = formData.get(`media_${index}`) as File
-        if (file && file.size > 0) {
-          const fileExt = file.name.split(".").pop()
-          const fileName = `media_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-
-          const { error: uploadError } = await supabase.storage
-            .from("chadabaz-media")
-            .upload(`reports/${fileName}`, file)
-
-          if (!uploadError) {
-            const { data } = supabase.storage.from("chadabaz-media").getPublicUrl(`reports/${fileName}`)
-            mediaUrls.push(data.publicUrl)
-          }
-        }
-        index++
-      }
-
-      // Create report
-      const { error: reportError } = await supabase.from("reports").insert({
-        chadabaz_id: chadabazId,
-        description,
-        media_urls: mediaUrls,
-        status: "pending",
-      })
-
-      if (reportError) {
-        throw reportError
-      }
-
-      return { success: true, message: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে। পর্যালোচনার পর এটি প্রকাশিত হবে।" }
-    } catch (error) {
-      console.error("Error submitting report:", error)
-      return { success: false, message: "রিপোর্ট জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।" }
     }
   }
 
@@ -294,7 +182,9 @@ export default function ReportPage() {
                     value={formData.party}
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, party: value }))}
                   >
-                    <SelectTrigger className="bangla-text">
+                    <SelectTrigger className="bangla-text" name="party">
+                      {" "}
+                      {/* Added name attribute here */}
                       <SelectValue placeholder="রাজনৈতিক দল নির্বাচন করুন" />
                     </SelectTrigger>
                     <SelectContent>

@@ -2,15 +2,16 @@
 
 import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
-import type { Chadabaz, ChadabazWithReports } from "./types"
+import type { Chadabaz, ChadabazWithReports, AdminReport } from "./types"
 
-// Mock data for when Supabase is not configured
+// Mock data for when Supabase is not configured (updated to reflect party_id)
 const mockChadabazData: Chadabaz[] = [
   {
     id: "1",
     name: "মোহাম্মদ করিম",
     location: "ঢাকা, ধানমন্ডি",
-    party: "আওয়ামী লীগ",
+    party_id: "mock-party-1", // Mock ID
+    party_name: "আওয়ামী লীগ", // Mock name
     profile_pic_url: "/placeholder.svg?height=100&width=100",
     facebook_url: "https://facebook.com/mohammad.karim",
     twitter_url: "https://twitter.com/mkarim",
@@ -22,7 +23,8 @@ const mockChadabazData: Chadabaz[] = [
     id: "2",
     name: "আব্দুল রহিম",
     location: "চট্টগ্রাম, আগ্রাবাদ",
-    party: "বিএনপি",
+    party_id: "mock-party-2", // Mock ID
+    party_name: "বিএনপি", // Mock name
     profile_pic_url: "/placeholder.svg?height=100&width=100",
     facebook_url: "https://facebook.com/abdul.rahim",
     youtube_url: "https://youtube.com/@abdulrahim",
@@ -33,7 +35,8 @@ const mockChadabazData: Chadabaz[] = [
     id: "3",
     name: "সালাহউদ্দিন আহমেদ",
     location: "সিলেট, জিন্দাবাজার",
-    party: "জাতীয় পার্টি",
+    party_id: "mock-party-3", // Mock ID
+    party_name: "জাতীয় পার্টি", // Mock name
     profile_pic_url: "/placeholder.svg?height=100&width=100",
     linkedin_url: "https://linkedin.com/in/salahuddin",
     tiktok_url: "https://tiktok.com/@salahuddin",
@@ -44,7 +47,8 @@ const mockChadabazData: Chadabaz[] = [
     id: "4",
     name: "রফিকুল ইসলাম",
     location: "রাজশাহী, বোয়ালিয়া",
-    party: "আওয়ামী লীগ",
+    party_id: "mock-party-1", // Mock ID
+    party_name: "আওয়ামী লীগ", // Mock name
     profile_pic_url: "/placeholder.svg?height=100&width=100",
     created_at: "2024-01-08T12:00:00Z",
     updated_at: "2024-01-08T12:00:00Z",
@@ -53,7 +57,8 @@ const mockChadabazData: Chadabaz[] = [
     id: "5",
     name: "নাসির উদ্দিন",
     location: "খুলনা, দৌলতপুর",
-    party: "বিএনপি",
+    party_id: "mock-party-2", // Mock ID
+    party_name: "বিএনপি", // Mock name
     profile_pic_url: "/placeholder.svg?height=100&width=100",
     created_at: "2024-01-12T08:30:00Z",
     updated_at: "2024-01-12T08:30:00Z",
@@ -70,11 +75,12 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
   }
 
   try {
-    // Get all chadabaz with their approved report counts
+    // Get all chadabaz with their approved report counts and party name
     const { data, error } = await supabase
       .from("chadabaz")
       .select(`
         *,
+        parties(name),
         reports!inner(status)
       `)
       .eq("reports.status", "approved")
@@ -90,7 +96,7 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
     }
 
     // Group by chadabaz and count reports
-    const chadabazWithCounts = data.reduce((acc: any[], current) => {
+    const chadabazWithCounts = data.reduce((acc: Chadabaz[], current: any) => {
       const existingIndex = acc.findIndex((item) => item.id === current.id)
 
       if (existingIndex >= 0) {
@@ -102,7 +108,8 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
           id: current.id,
           name: current.name,
           location: current.location,
-          party: current.party,
+          party_id: current.party_id,
+          party_name: current.parties?.name, // Get party name from joined table
           profile_pic_url: current.profile_pic_url,
           facebook_url: current.facebook_url,
           twitter_url: current.twitter_url,
@@ -120,8 +127,8 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
 
     // Sort by report count (highest first), then by creation date
     return chadabazWithCounts.sort((a, b) => {
-      if (b.report_count !== a.report_count) {
-        return b.report_count - a.report_count
+      if ((b.report_count || 0) !== (a.report_count || 0)) {
+        return (b.report_count || 0) - (a.report_count || 0)
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
@@ -140,12 +147,12 @@ export async function getPartyStatistics(): Promise<{ party: string; totalReport
   }
 
   try {
-    // Get all chadabaz with their approved reports, grouped by party
+    // Get all chadabaz with their approved reports, joining with parties table
     const { data, error } = await supabase
       .from("chadabaz")
       .select(`
         id,
-        party,
+        parties(name),
         reports!inner(status)
       `)
       .eq("reports.status", "approved")
@@ -159,18 +166,19 @@ export async function getPartyStatistics(): Promise<{ party: string; totalReport
       return []
     }
 
-    // Group by party and count reports and unique members
-    const partyStats = data.reduce((acc: any, current) => {
-      if (!acc[current.party]) {
-        acc[current.party] = {
-          party: current.party,
+    // Group by party name and count reports and unique members
+    const partyStats = data.reduce((acc: any, current: any) => {
+      const partyName = current.parties?.name || "Unknown Party" // Use party name from join
+      if (!acc[partyName]) {
+        acc[partyName] = {
+          party: partyName,
           totalReports: 0,
           members: new Set(),
         }
       }
 
-      acc[current.party].totalReports += 1
-      acc[current.party].members.add(current.id)
+      acc[partyName].totalReports += 1
+      acc[partyName].members.add(current.id)
 
       return acc
     }, {})
@@ -199,8 +207,15 @@ export async function getChadabazProfile(id: string): Promise<ChadabazWithReport
   }
 
   try {
-    // Get chadabaz profile
-    const { data: chadabaz, error: chadabazError } = await supabase.from("chadabaz").select("*").eq("id", id).single()
+    // Get chadabaz profile and party name
+    const { data: chadabaz, error: chadabazError } = await supabase
+      .from("chadabaz")
+      .select(`
+        *,
+        parties(name)
+      `)
+      .eq("id", id)
+      .single()
 
     if (chadabazError || !chadabaz) {
       console.error("Error fetching chadabaz profile:", chadabazError)
@@ -217,17 +232,23 @@ export async function getChadabazProfile(id: string): Promise<ChadabazWithReport
 
     if (reportsError) {
       console.error("Error fetching reports:", reportsError)
-      return { ...chadabaz, reports: [] }
+      return { ...chadabaz, reports: [] } as ChadabazWithReports
     }
 
-    return { ...chadabaz, reports: reports || [] }
+    // Map chadabaz data to include party_name
+    const chadabazWithPartyName: Chadabaz = {
+      ...chadabaz,
+      party_name: (chadabaz as any).parties?.name, // Access party name from joined data
+    }
+
+    return { ...chadabazWithPartyName, reports: reports || [] } as ChadabazWithReports
   } catch (error) {
     console.error("Error in getChadabazProfile:", error)
     return null
   }
 }
 
-export async function searchChadabaz(query: string, party?: string): Promise<Chadabaz[]> {
+export async function searchChadabaz(query: string, partyName?: string): Promise<Chadabaz[]> {
   const supabase = await createClient()
 
   if (!supabase) {
@@ -240,6 +261,7 @@ export async function searchChadabaz(query: string, party?: string): Promise<Cha
       .from("chadabaz")
       .select(`
         *,
+        parties(name),
         reports!inner(status)
       `)
       .eq("reports.status", "approved")
@@ -248,8 +270,9 @@ export async function searchChadabaz(query: string, party?: string): Promise<Cha
       queryBuilder = queryBuilder.or(`name.ilike.%${query}%,location.ilike.%${query}%`)
     }
 
-    if (party && party !== "all") {
-      queryBuilder = queryBuilder.eq("party", party)
+    if (partyName && partyName !== "all") {
+      // Filter by party name from the joined parties table
+      queryBuilder = queryBuilder.eq("parties.name", partyName)
     }
 
     const { data, error } = await queryBuilder.order("created_at", { ascending: false })
@@ -264,7 +287,7 @@ export async function searchChadabaz(query: string, party?: string): Promise<Cha
     }
 
     // Group by chadabaz and count reports
-    const chadabazWithCounts = data.reduce((acc: any[], current) => {
+    const chadabazWithCounts = data.reduce((acc: Chadabaz[], current: any) => {
       const existingIndex = acc.findIndex((item) => item.id === current.id)
 
       if (existingIndex >= 0) {
@@ -276,7 +299,8 @@ export async function searchChadabaz(query: string, party?: string): Promise<Cha
           id: current.id,
           name: current.name,
           location: current.location,
-          party: current.party,
+          party_id: current.party_id,
+          party_name: current.parties?.name, // Get party name from joined table
           profile_pic_url: current.profile_pic_url,
           facebook_url: current.facebook_url,
           twitter_url: current.twitter_url,
@@ -294,8 +318,8 @@ export async function searchChadabaz(query: string, party?: string): Promise<Cha
 
     // Sort by report count (highest first), then by creation date
     return chadabazWithCounts.sort((a, b) => {
-      if (b.report_count !== a.report_count) {
-        return b.report_count - a.report_count
+      if ((b.report_count || 0) !== (a.report_count || 0)) {
+        return (b.report_count || 0) - (a.report_count || 0)
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
@@ -317,7 +341,7 @@ export async function submitReport(formData: FormData) {
 
   const name = formData.get("name") as string
   const location = formData.get("location") as string
-  const party = formData.get("party") as string
+  const partyName = formData.get("party") as string // Get party name from form
   const description = formData.get("description") as string
   const profilePicture = formData.get("profile_picture") as File
 
@@ -338,7 +362,37 @@ export async function submitReport(formData: FormData) {
   }
 
   try {
-    // Check if chadabaz already exists
+    // 1. Find or create party
+    let partyId: string
+    const { data: existingParty, error: partyError } = await supabase
+      .from("parties")
+      .select("id")
+      .eq("name", partyName)
+      .single()
+
+    if (partyError && partyError.code !== "PGRST116") {
+      // PGRST116 means no rows found
+      console.error("Error checking existing party:", partyError)
+      throw partyError
+    }
+
+    if (existingParty) {
+      partyId = existingParty.id
+    } else {
+      const { data: newParty, error: insertPartyError } = await supabase
+        .from("parties")
+        .insert({ name: partyName })
+        .select("id")
+        .single()
+
+      if (insertPartyError) {
+        console.error("Error creating new party:", insertPartyError)
+        throw insertPartyError
+      }
+      partyId = newParty.id
+    }
+
+    // 2. Check if chadabaz already exists
     const { data: existingChadabaz } = await supabase
       .from("chadabaz")
       .select("id")
@@ -367,13 +421,13 @@ export async function submitReport(formData: FormData) {
         }
       }
 
-      // Create new chadabaz with social media URLs
+      // Create new chadabaz with social media URLs and party_id
       const { data: newChadabaz, error: chadabazError } = await supabase
         .from("chadabaz")
         .insert({
           name,
           location,
-          party,
+          party_id: partyId, // Use the resolved partyId
           profile_pic_url: profilePicUrl,
           facebook_url: facebook_url || null,
           twitter_url: twitter_url || null,
@@ -424,6 +478,7 @@ export async function submitReport(formData: FormData) {
 
     revalidatePath("/")
     revalidatePath("/search")
+    revalidatePath("/PTF/dashboard")
     return { success: true, message: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে। পর্যালোচনার পর এটি প্রকাশিত হবে।" }
   } catch (error) {
     console.error("Error submitting report:", error)
@@ -432,7 +487,7 @@ export async function submitReport(formData: FormData) {
 }
 
 // Admin functions
-export async function getAdminReports() {
+export async function getAdminReports(): Promise<AdminReport[]> {
   const supabase = await createClient()
 
   if (!supabase) {
@@ -447,13 +502,14 @@ export async function getAdminReports() {
         chadabaz (
           name,
           location,
-          party,
+          party_id,
           facebook_url,
           twitter_url,
           instagram_url,
           linkedin_url,
           youtube_url,
-          tiktok_url
+          tiktok_url,
+          parties(name)
         )
       `)
       .order("created_at", { ascending: false })
@@ -463,7 +519,18 @@ export async function getAdminReports() {
       return []
     }
 
-    return data || []
+    // Map data to include party_name directly in chadabaz object
+    const mappedData: AdminReport[] = data.map((report: any) => ({
+      ...report,
+      chadabaz: report.chadabaz
+        ? {
+            ...report.chadabaz,
+            party_name: report.chadabaz.parties?.name,
+          }
+        : null,
+    }))
+
+    return mappedData || []
   } catch (error) {
     console.error("Error in getAdminReports:", error)
     return []

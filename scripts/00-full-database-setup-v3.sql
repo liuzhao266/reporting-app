@@ -8,6 +8,8 @@
 SET search_path = public, storage;
 
 -- Step 1: Drop existing objects in reverse order of creation to avoid dependency issues
+-- Use DO $$ BEGIN BEGIN EXECUTE ... EXCEPTION WHEN OTHERS THEN NULL; END; END $$; blocks
+-- to gracefully handle cases where objects/tables might not exist.
 
 -- Drop storage policies first, as they are on a system table (storage.objects)
 DROP POLICY IF EXISTS "Public can upload media" ON storage.objects;
@@ -15,39 +17,53 @@ DROP POLICY IF EXISTS "Public can view media" ON storage.objects;
 DROP POLICY IF EXISTS "Public can update media" ON storage.objects;
 DROP POLICY IF EXISTS "Public can delete media" ON storage.objects;
 
--- Drop policies on custom tables
-DROP POLICY IF EXISTS "Public can view chadabaz profiles" ON chadabaz;
-DROP POLICY IF EXISTS "Public can view approved reports" ON reports;
-DROP POLICY IF EXISTS "Public can submit chadabaz profiles" ON chadabaz;
-DROP POLICY IF EXISTS "Public can submit reports" ON reports;
-DROP POLICY IF EXISTS "Admins can update reports" ON reports;
-DROP POLICY IF EXISTS "Admins can delete reports" ON reports;
-DROP POLICY IF EXISTS "Admins can update chadabaz" ON chadabaz;
-DROP POLICY IF EXISTS "Admins can delete chadabaz" ON chadabaz;
+-- Drop policies on custom tables (wrapped in EXECUTE with proper exception handling)
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Public can view chadabaz profiles" ON chadabaz;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Public can view approved reports" ON reports;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Public can submit chadabaz profiles" ON chadabaz;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Public can submit reports" ON reports;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Admins can update reports" ON reports;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Admins can delete reports" ON reports;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Admins can update chadabaz" ON chadabaz;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Admins can delete chadabaz" ON chadabaz;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Public can view parties" ON parties;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP POLICY IF EXISTS "Admins can manage parties" ON parties;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
 
--- Drop triggers
-DROP TRIGGER IF EXISTS update_chadabaz_updated_at ON chadabaz;
-DROP TRIGGER IF EXISTS update_reports_updated_at ON reports;
-
--- Drop functions
-DROP FUNCTION IF EXISTS update_updated_at_column();
+-- Drop triggers (wrapped in EXECUTE with proper exception handling)
+DO $$ BEGIN BEGIN EXECUTE 'DROP TRIGGER IF EXISTS update_chadabaz_updated_at ON chadabaz;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP TRIGGER IF EXISTS update_reports_updated_at ON reports;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
+DO $$ BEGIN BEGIN EXECUTE 'DROP TRIGGER IF EXISTS update_parties_updated_at ON parties;'; EXCEPTION WHEN OTHERS THEN NULL; END; END $$;
 
 -- Drop views
 DROP VIEW IF EXISTS admin_stats;
 
+-- Drop functions
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
 -- Drop tables (order matters due to foreign keys)
-DROP TABLE IF EXISTS reports CASCADE; -- CASCADE will drop dependent objects like foreign key constraints
+DROP TABLE IF EXISTS reports CASCADE;
 DROP TABLE IF EXISTS chadabaz CASCADE;
+DROP TABLE IF EXISTS parties CASCADE;
 
 -- Drop storage bucket (if it exists and is not empty)
--- Use DO $$ BEGIN ... END $$; block for conditional execution
 DO $$
 BEGIN
     IF (SELECT COUNT(*) FROM storage.buckets WHERE id = 'chadabaz-media') > 0 THEN
-        -- Empty the bucket first
-        PERFORM storage.empty_bucket('chadabaz-media');
-        -- Then delete the bucket
-        PERFORM storage.delete_bucket('chadabaz-media');
+        BEGIN
+            -- Empty the bucket first, using fully qualified name and explicit cast
+            PERFORM storage.empty_bucket('chadabaz-media'::text);
+        EXCEPTION WHEN OTHERS THEN
+            -- Log the error but continue, as the main goal is schema setup
+            RAISE WARNING 'Could not empty bucket "chadabaz-media": %', SQLERRM;
+        END;
+
+        BEGIN
+            -- Then delete the bucket, using fully qualified name and explicit cast
+            PERFORM storage.delete_bucket('chadabaz-media'::text);
+        EXCEPTION WHEN OTHERS THEN
+            -- Log the error but continue
+            RAISE WARNING 'Could not delete bucket "chadabaz-media": %', SQLERRM;
+        END;
     END IF;
 END $$;
 
@@ -55,12 +71,21 @@ END $$;
 -- Step 2: Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Step 3: Create the chadabaz table with social media URLs and unique constraint
+-- Step 3: Create the parties table
+CREATE TABLE parties (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Step 4: Create the chadabaz table with foreign key to parties
 CREATE TABLE chadabaz (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   location TEXT NOT NULL,
-  party TEXT NOT NULL,
+  party_id UUID NOT NULL REFERENCES parties(id) ON DELETE RESTRICT, -- Foreign key to parties table
   profile_pic_url TEXT,
   facebook_url TEXT,
   twitter_url TEXT,
@@ -73,7 +98,7 @@ CREATE TABLE chadabaz (
   UNIQUE (name, location) -- Ensures unique combination of name and location
 );
 
--- Step 4: Create the reports table
+-- Step 5: Create the reports table
 CREATE TABLE reports (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   chadabaz_id UUID REFERENCES chadabaz(id) ON DELETE CASCADE,
@@ -84,18 +109,15 @@ CREATE TABLE reports (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Step 5: Create indexes for better performance
+-- Step 6: Create indexes for better performance
+CREATE INDEX idx_parties_name ON parties(name);
 CREATE INDEX idx_chadabaz_name ON chadabaz(name);
 CREATE INDEX idx_chadabaz_location ON chadabaz(location);
-CREATE INDEX idx_chadabaz_party ON chadabaz(party);
+CREATE INDEX idx_chadabaz_party_id ON chadabaz(party_id);
 CREATE INDEX idx_chadabaz_created_at ON chadabaz(created_at);
 CREATE INDEX idx_reports_chadabaz_id ON reports(chadabaz_id);
 CREATE INDEX idx_reports_status ON reports(status);
 CREATE INDEX idx_reports_created_at ON reports(created_at);
-
--- Step 6: Enable Row Level Security
-ALTER TABLE chadabaz ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 
 -- Step 7: Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -107,6 +129,11 @@ END;
 $$ language 'plpgsql';
 
 -- Step 8: Create triggers for updated_at
+CREATE TRIGGER update_parties_updated_at
+    BEFORE UPDATE ON parties
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_chadabaz_updated_at 
     BEFORE UPDATE ON chadabaz 
     FOR EACH ROW 
@@ -118,34 +145,33 @@ CREATE TRIGGER update_reports_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Step 9: Create policies for public read and insert access
+ALTER TABLE parties ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public can view parties" ON parties
+  FOR SELECT USING (true);
+CREATE POLICY "Admins can manage parties" ON parties
+  FOR ALL USING (true) WITH CHECK (true); -- For admin to add/edit parties
+
+ALTER TABLE chadabaz ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public can view chadabaz profiles" ON chadabaz
   FOR SELECT USING (true);
-
-CREATE POLICY "Public can view approved reports" ON reports
-  FOR SELECT USING (status = 'approved');
-
 CREATE POLICY "Public can submit chadabaz profiles" ON chadabaz
   FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Public can submit reports" ON reports
-  FOR INSERT WITH CHECK (true);
-
--- Step 10: Create admin policies for full access to data
-CREATE POLICY "Admins can update reports" ON reports
-  FOR UPDATE USING (true)
-  WITH CHECK (true);
-
-CREATE POLICY "Admins can delete reports" ON reports
-  FOR DELETE USING (true);
-
 CREATE POLICY "Admins can update chadabaz" ON chadabaz
-  FOR UPDATE USING (true)
-  WITH CHECK (true);
-
+  FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Admins can delete chadabaz" ON chadabaz
   FOR DELETE USING (true);
 
--- Step 11: Create a view for admin dashboard statistics
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public can view approved reports" ON reports
+  FOR SELECT USING (status = 'approved');
+CREATE POLICY "Public can submit reports" ON reports
+  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admins can update reports" ON reports
+  FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Admins can delete reports" ON reports
+  FOR DELETE USING (true);
+
+-- Step 10: Create a view for admin dashboard statistics
 CREATE OR REPLACE VIEW admin_stats AS
 SELECT 
   (SELECT COUNT(*) FROM reports) as total_reports,
@@ -157,12 +183,12 @@ SELECT
 -- Grant access to the view
 GRANT SELECT ON admin_stats TO anon, authenticated;
 
--- Step 12: Create storage bucket for media files
+-- Step 11: Create storage bucket for media files
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('chadabaz-media', 'chadabaz-media', true)
-ON CONFLICT (id) DO NOTHING; -- Use ON CONFLICT for bucket creation
+ON CONFLICT (id) DO NOTHING;
 
--- Step 13: Create storage policies for chadabaz-media bucket
+-- Step 12: Create storage policies for chadabaz-media bucket
 CREATE POLICY "Public can upload media" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'chadabaz-media');
 
@@ -175,9 +201,30 @@ CREATE POLICY "Public can update media" ON storage.objects
 CREATE POLICY "Public can delete media" ON storage.objects
   FOR DELETE USING (bucket_id = 'chadabaz-media');
 
--- Step 14: Insert sample chadabaz data
+-- Step 13: Insert sample data
 DO $$
 DECLARE
+    party_awami_league_id UUID;
+    party_bnp_id UUID;
+    party_jatiya_id UUID;
+    party_jamaat_id UUID;
+    party_torikot_id UUID;
+    party_jasod_id UUID;
+    party_workers_id UUID;
+    party_gonotontri_id UUID;
+    party_ldp_id UUID;
+    party_khelafat_id UUID;
+    party_islamic_oikkojot_id UUID;
+    party_gon_odhikar_id UUID;
+    party_jatiya_nagorik_id UUID;
+    party_kollan_id UUID;
+    party_mukti_council_id UUID;
+    party_biplobi_workers_id UUID;
+    party_gonoforum_id UUID;
+    party_shommilito_shomajik_id UUID;
+    party_other_id UUID;
+    party_no_affiliation_id UUID;
+
     karim_id UUID;
     rahim_id UUID;
     salah_id UUID;
@@ -187,19 +234,61 @@ DECLARE
     kamal_id UUID;
     jahid_id UUID;
 BEGIN
-    -- Insert initial chadabaz data if not exists
-    INSERT INTO chadabaz (name, location, party, facebook_url, twitter_url, instagram_url) VALUES
-    ('মোহাম্মদ করিম', 'ঢাকা, ধানমন্ডি', 'আওয়ামী লীগ', 'https://facebook.com/mohammad.karim', 'https://twitter.com/mkarim', 'https://instagram.com/mohammad_karim'),
-    ('আব্দুল রহিম', 'চট্টগ্রাম, আগ্রাবাদ', 'বাংলাদেশ জাতীয়তাবাদী দল (বিএনপি)', 'https://facebook.com/abdul.rahim', NULL, NULL),
-    ('সালাহউদ্দিন আহমেদ', 'সিলেট, জিন্দাবাজার', 'জাতীয় পার্টি (এরশাদ)', NULL, NULL, NULL),
-    ('রফিকুল ইসলাম', 'রাজশাহী, বোয়ালিয়া', 'আওয়ামী লীগ', NULL, NULL, NULL),
-    ('নাসির উদ্দিন', 'খুলনা, দৌলতপুর', 'বিএনপি', NULL, NULL, NULL),
-    ('আলী হাসান', 'বরিশাল, বন্দর', 'জামায়াতে ইসলামী বাংলাদেশ', NULL, NULL, NULL),
-    ('কামাল উদ্দিন', 'রংপুর, গঙ্গাচড়া', 'আওয়ামী লীগ', NULL, NULL, NULL),
-    ('জাহিদ হোসেন', 'ময়মনসিংহ, ত্রিশাল', 'বিএনপি', NULL, NULL, NULL)
+    -- Insert parties first
+    INSERT INTO parties (name) VALUES
+    ('আওয়ামী লীগ') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_awami_league_id;
+    INSERT INTO parties (name) VALUES
+    ('বাংলাদেশ জাতীয়তাবাদী দল (বিএনপি)') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_bnp_id;
+    INSERT INTO parties (name) VALUES
+    ('জাতীয় পার্টি (এরশাদ)') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_jatiya_id;
+    INSERT INTO parties (name) VALUES
+    ('জামায়াতে ইসলামী বাংলাদেশ') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_jamaat_id;
+    INSERT INTO parties (name) VALUES
+    ('বাংলাদেশ তরিকত ফেডারেশন') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_torikot_id;
+    INSERT INTO parties (name) VALUES
+    ('জাতীয় সমাজতান্ত্রিক দল (জাসদ)') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_jasod_id;
+    INSERT INTO parties (name) VALUES
+    ('বাংলাদেশ ওয়ার্কার্স পার্টি') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_workers_id;
+    INSERT INTO parties (name) VALUES
+    ('গণতন্ত্রী পার্টি') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_gonotontri_id;
+    INSERT INTO parties (name) VALUES
+    ('লিবারেল ডেমোক্রেটিক পার্টি (এলডিপি)') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_ldp_id;
+    INSERT INTO parties (name) VALUES
+    ('বাংলাদেশ খেলাফত মজলিস') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_khelafat_id;
+    INSERT INTO parties (name) VALUES
+    ('ইসলামী ঐক্যজোট') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_islamic_oikkojot_id;
+    INSERT INTO parties (name) VALUES
+    ('গণ অধিকার পরিষদ') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_gon_odhikar_id;
+    INSERT INTO parties (name) VALUES
+    ('জাতীয় নাগরিক পার্টি (এনসিপি)') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_jatiya_nagorik_id;
+    INSERT INTO parties (name) VALUES
+    ('বাংলাদেশ কল্যাণ পার্টি') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_kollan_id;
+    INSERT INTO parties (name) VALUES
+    ('জাতীয় মুক্তি কাউন্সিল') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_mukti_council_id;
+    INSERT INTO parties (name) VALUES
+    ('বিপ্লবী ওয়ার্কার্স পার্টি') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_biplobi_workers_id;
+    INSERT INTO parties (name) VALUES
+    ('গণফোরাম') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_gonoforum_id;
+    INSERT INTO parties (name) VALUES
+    ('সম্মিলিত সামাজিক আন্দোলন') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_shommilito_shomajik_id;
+    INSERT INTO parties (name) VALUES
+    ('অন্যান্য') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_other_id;
+    INSERT INTO parties (name) VALUES
+    ('কোনো দলের সাথে সম্পৃক্ত নয়') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO party_no_affiliation_id;
+
+    -- Insert sample chadabaz data with party_id
+    INSERT INTO chadabaz (name, location, party_id, facebook_url, twitter_url, instagram_url) VALUES
+    ('মোহাম্মদ করিম', 'ঢাকা, ধানমন্ডি', party_awami_league_id, 'https://facebook.com/mohammad.karim', 'https://twitter.com/mkarim', 'https://instagram.com/mohammad_karim'),
+    ('আব্দুল রহিম', 'চট্টগ্রাম, আগ্রাবাদ', party_bnp_id, 'https://facebook.com/abdul.rahim', NULL, NULL),
+    ('সালাহউদ্দিন আহমেদ', 'সিলেট, জিন্দাবাজার', party_jatiya_id, NULL, NULL, NULL),
+    ('রফিকুল ইসলাম', 'রাজশাহী, বোয়ালিয়া', party_awami_league_id, NULL, NULL, NULL),
+    ('নাসির উদ্দিন', 'খুলনা, দৌলতপুর', party_bnp_id, NULL, NULL, NULL),
+    ('আলী হাসান', 'বরিশাল, বন্দর', party_jamaat_id, NULL, NULL, NULL),
+    ('কামাল উদ্দিন', 'রংপুর, গঙ্গাচড়া', party_awami_league_id, NULL, NULL, NULL),
+    ('জাহিদ হোসেন', 'ময়মনসিংহ, ত্রিশাল', party_bnp_id, NULL, NULL, NULL)
     ON CONFLICT (name, location) DO NOTHING;
 
-    -- Get chadabaz IDs after ensuring they exist
+    -- Get chadabaz IDs
     SELECT id INTO karim_id FROM chadabaz WHERE name = 'মোহাম্মদ করিম' AND location = 'ঢাকা, ধানমন্ডি' LIMIT 1;
     SELECT id INTO rahim_id FROM chadabaz WHERE name = 'আব্দুল রহিম' AND location = 'চট্টগ্রাম, আগ্রাবাদ' LIMIT 1;
     SELECT id INTO salah_id FROM chadabaz WHERE name = 'সালাহউদ্দিন আহমেদ' AND location = 'সিলেট, জিন্দাবাজার' LIMIT 1;

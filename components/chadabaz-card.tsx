@@ -38,7 +38,7 @@ export function ChadabazCard({ chadabaz }: ChadabazCardProps) {
 
         <div className="mb-4 space-y-2">
           <Badge variant="outline" className="text-sm">
-            {chadabaz.party}
+            {chadabaz.party_name} {/* Use party_name */}
           </Badge>
 
           {/* Add report count badge */}
