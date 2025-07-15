@@ -1,16 +1,168 @@
--- Insert sample chadabaz data
-INSERT INTO chadabaz (name, location, party, facebook_url, twitter_url, instagram_url) VALUES
-('মোহাম্মদ করিম', 'ঢাকা, ধানমন্ডি', 'আওয়ামী লীগ', 'https://facebook.com/mohammad.karim', 'https://twitter.com/mkarim', 'https://instagram.com/mohammad_karim'),
-('আব্দুল রহিম', 'চট্টগ্রাম, আগ্রাবাদ', 'বাংলাদেশ জাতীয়তাবাদী দল (বিএনপি)', 'https://facebook.com/abdul.rahim', NULL, NULL),
-('সালাহউদ্দিন আহমেদ', 'সিলেট, জিন্দাবাজার', 'জাতীয় পার্টি (এরশাদ)', NULL, NULL, NULL),
-('রফিকুল ইসলাম', 'রাজশাহী, বোয়ালিয়া', 'আওয়ামী লীগ', NULL, NULL, NULL),
-('নাসির উদ্দিন', 'খুলনা, দৌলতপুর', 'বিএনপি', NULL, NULL, NULL),
-('আলী হাসান', 'বরিশাল, বন্দর', 'জামায়াতে ইসলামী বাংলাদেশ', NULL, NULL, NULL),
-('কামাল উদ্দিন', 'রংপুর, গঙ্গাচড়া', 'আওয়ামী লীগ', NULL, NULL, NULL),
-('জাহিদ হোসেন', 'ময়মনসিংহ, ত্রিশাল', 'বিএনপি', NULL, NULL, NULL)
-ON CONFLICT (name, location) DO NOTHING; -- This will now work because of the UNIQUE constraint
+-- =================================================================================================
+-- WARNING: This script will drop and recreate all specified tables, functions, triggers, policies,
+-- and storage buckets. Any existing data in these tables will be lost.
+-- Only run this if you intend to reset your database schema and data.
+-- =================================================================================================
 
--- Insert sample reports (we'll get the chadabaz IDs first)
+-- Step 1: Drop existing objects in reverse order of creation to avoid dependency issues
+
+-- Drop storage policies first, as they are on a system table (storage.objects)
+DROP POLICY IF EXISTS "Public can upload media" ON storage.objects;
+DROP POLICY IF EXISTS "Public can view media" ON storage.objects;
+DROP POLICY IF EXISTS "Public can update media" ON storage.objects;
+DROP POLICY IF EXISTS "Public can delete media" ON storage.objects;
+
+-- Drop policies on custom tables
+DROP POLICY IF EXISTS "Public can view chadabaz profiles" ON chadabaz;
+DROP POLICY IF EXISTS "Public can view approved reports" ON reports;
+DROP POLICY IF EXISTS "Public can submit chadabaz profiles" ON chadabaz;
+DROP POLICY IF EXISTS "Public can submit reports" ON reports;
+DROP POLICY IF EXISTS "Admins can update reports" ON reports;
+DROP POLICY IF EXISTS "Admins can delete reports" ON reports;
+DROP POLICY IF EXISTS "Admins can update chadabaz" ON chadabaz;
+DROP POLICY IF EXISTS "Admins can delete chadabaz" ON chadabaz;
+
+-- Drop triggers
+DROP TRIGGER IF EXISTS update_chadabaz_updated_at ON chadabaz;
+DROP TRIGGER IF EXISTS update_reports_updated_at ON reports;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- Drop views
+DROP VIEW IF EXISTS admin_stats;
+
+-- Drop tables (order matters due to foreign keys)
+DROP TABLE IF EXISTS reports CASCADE; -- CASCADE will drop dependent objects like foreign key constraints
+DROP TABLE IF EXISTS chadabaz CASCADE;
+
+-- Drop storage bucket (if it exists)
+DELETE FROM storage.buckets WHERE id = 'chadabaz-media';
+
+-- Step 2: Enable necessary extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Step 3: Create the chadabaz table with social media URLs and unique constraint
+CREATE TABLE chadabaz (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  location TEXT NOT NULL,
+  party TEXT NOT NULL,
+  profile_pic_url TEXT,
+  facebook_url TEXT,
+  twitter_url TEXT,
+  instagram_url TEXT,
+  linkedin_url TEXT,
+  youtube_url TEXT,
+  tiktok_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (name, location) -- Ensures unique combination of name and location
+);
+
+-- Step 4: Create the reports table
+CREATE TABLE reports (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  chadabaz_id UUID REFERENCES chadabaz(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  media_urls TEXT[] DEFAULT '{}',
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Step 5: Create indexes for better performance
+CREATE INDEX idx_chadabaz_name ON chadabaz(name);
+CREATE INDEX idx_chadabaz_location ON chadabaz(location);
+CREATE INDEX idx_chadabaz_party ON chadabaz(party);
+CREATE INDEX idx_chadabaz_created_at ON chadabaz(created_at);
+CREATE INDEX idx_reports_chadabaz_id ON reports(chadabaz_id);
+CREATE INDEX idx_reports_status ON reports(status);
+CREATE INDEX idx_reports_created_at ON reports(created_at);
+
+-- Step 6: Enable Row Level Security
+ALTER TABLE chadabaz ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+
+-- Step 7: Create function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Step 8: Create triggers for updated_at
+CREATE TRIGGER update_chadabaz_updated_at 
+    BEFORE UPDATE ON chadabaz 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_reports_updated_at 
+    BEFORE UPDATE ON reports 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Step 9: Create policies for public read and insert access
+CREATE POLICY "Public can view chadabaz profiles" ON chadabaz
+  FOR SELECT USING (true);
+
+CREATE POLICY "Public can view approved reports" ON reports
+  FOR SELECT USING (status = 'approved');
+
+CREATE POLICY "Public can submit chadabaz profiles" ON chadabaz
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Public can submit reports" ON reports
+  FOR INSERT WITH CHECK (true);
+
+-- Step 10: Create admin policies for full access to data
+CREATE POLICY "Admins can update reports" ON reports
+  FOR UPDATE USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Admins can delete reports" ON reports
+  FOR DELETE USING (true);
+
+CREATE POLICY "Admins can update chadabaz" ON chadabaz
+  FOR UPDATE USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Admins can delete chadabaz" ON chadabaz
+  FOR DELETE USING (true);
+
+-- Step 11: Create a view for admin dashboard statistics
+CREATE OR REPLACE VIEW admin_stats AS
+SELECT 
+  (SELECT COUNT(*) FROM reports) as total_reports,
+  (SELECT COUNT(*) FROM reports WHERE status = 'pending') as pending_reports,
+  (SELECT COUNT(*) FROM reports WHERE status = 'approved') as approved_reports,
+  (SELECT COUNT(*) FROM reports WHERE status = 'rejected') as rejected_reports,
+  (SELECT COUNT(*) FROM chadabaz) as total_chadabaz;
+
+-- Grant access to the view
+GRANT SELECT ON admin_stats TO anon, authenticated;
+
+-- Step 12: Create storage bucket for media files
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('chadabaz-media', 'chadabaz-media', true)
+ON CONFLICT (id) DO NOTHING; -- Use ON CONFLICT for bucket creation
+
+-- Step 13: Create storage policies for chadabaz-media bucket
+CREATE POLICY "Public can upload media" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'chadabaz-media');
+
+CREATE POLICY "Public can view media" ON storage.objects
+  FOR SELECT USING (bucket_id = 'chadabaz-media');
+
+CREATE POLICY "Public can update media" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'chadabaz-media');
+
+CREATE POLICY "Public can delete media" ON storage.objects
+  FOR DELETE USING (bucket_id = 'chadabaz-media');
+
+-- Step 14: Insert sample chadabaz data
 DO $$
 DECLARE
     karim_id UUID;

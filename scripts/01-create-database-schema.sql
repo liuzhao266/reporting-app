@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS chadabaz (
   youtube_url TEXT,
   tiktok_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  -- Add a unique constraint on name and location
+  UNIQUE (name, location)
 );
 
 -- Create the reports table
