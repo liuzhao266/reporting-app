@@ -2,88 +2,27 @@
 
 import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
-import type { Chadabaz, ChadabazWithReports, AdminReport } from "./types"
-
-// Mock data for when Supabase is not configured (updated to reflect party_id)
-const mockChadabazData: Chadabaz[] = [
-  {
-    id: "1",
-    name: "মোহাম্মদ করিম",
-    location: "ঢাকা, ধানমন্ডি",
-    party_id: "mock-party-1", // Mock ID
-    party_name: "আওয়ামী লীগ", // Mock name
-    profile_pic_url: "/placeholder.svg?height=100&width=100",
-    facebook_url: "https://facebook.com/mohammad.karim",
-    twitter_url: "https://twitter.com/mkarim",
-    instagram_url: "https://instagram.com/mohammad_karim",
-    created_at: "2024-01-15T10:30:00Z",
-    updated_at: "2024-01-15T10:30:00Z",
-  },
-  {
-    id: "2",
-    name: "আব্দুল রহিম",
-    location: "চট্টগ্রাম, আগ্রাবাদ",
-    party_id: "mock-party-2", // Mock ID
-    party_name: "বিএনপি", // Mock name
-    profile_pic_url: "/placeholder.svg?height=100&width=100",
-    facebook_url: "https://facebook.com/abdul.rahim",
-    youtube_url: "https://youtube.com/@abdulrahim",
-    created_at: "2024-01-10T14:20:00Z",
-    updated_at: "2024-01-10T14:20:00Z",
-  },
-  {
-    id: "3",
-    name: "সালাহউদ্দিন আহমেদ",
-    location: "সিলেট, জিন্দাবাজার",
-    party_id: "mock-party-3", // Mock ID
-    party_name: "জাতীয় পার্টি", // Mock name
-    profile_pic_url: "/placeholder.svg?height=100&width=100",
-    linkedin_url: "https://linkedin.com/in/salahuddin",
-    tiktok_url: "https://tiktok.com/@salahuddin",
-    created_at: "2024-01-05T09:15:00Z",
-    updated_at: "2024-01-05T09:15:00Z",
-  },
-  {
-    id: "4",
-    name: "রফিকুল ইসলাম",
-    location: "রাজশাহী, বোয়ালিয়া",
-    party_id: "mock-party-1", // Mock ID
-    party_name: "আওয়ামী লীগ", // Mock name
-    profile_pic_url: "/placeholder.svg?height=100&width=100",
-    created_at: "2024-01-08T12:00:00Z",
-    updated_at: "2024-01-08T12:00:00Z",
-  },
-  {
-    id: "5",
-    name: "নাসির উদ্দিন",
-    location: "খুলনা, দৌলতপুর",
-    party_id: "mock-party-2", // Mock ID
-    party_name: "বিএনপি", // Mock name
-    profile_pic_url: "/placeholder.svg?height=100&width=100",
-    created_at: "2024-01-12T08:30:00Z",
-    updated_at: "2024-01-12T08:30:00Z",
-  },
-]
+import type { Chadabaz, ChadabazWithReports, AdminReport, DashboardStats } from "./types" // Added DashboardStats
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js"
 
 export async function getChadabazList(): Promise<Chadabaz[]> {
   const supabase = await createClient()
 
   if (!supabase) {
-    console.log("Supabase not configured - using mock data")
-    // Return empty array if no Supabase connection
+    console.log("Supabase not configured - cannot fetch data")
     return []
   }
 
   try {
-    // Get all chadabaz with their approved report counts and party name
     const { data, error } = await supabase
       .from("chadabaz")
       .select(`
         *,
-        parties(name),
-        reports!inner(status)
+        party(name),
+        report!inner(status)
       `)
-      .eq("reports.status", "approved")
+      .eq("approved_status", true)
+      .eq("report.status", "approved")
 
     if (error) {
       console.error("Error fetching chadabaz list:", error)
@@ -91,32 +30,26 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
     }
 
     if (!data || data.length === 0) {
-      console.log("No approved reports found")
+      console.log("No approved chadabaz with approved reports found")
       return []
     }
 
-    // Group by chadabaz and count reports
     const chadabazWithCounts = data.reduce((acc: Chadabaz[], current: any) => {
       const existingIndex = acc.findIndex((item) => item.id === current.id)
 
       if (existingIndex >= 0) {
-        // Increment report count for existing chadabaz
         acc[existingIndex].report_count = (acc[existingIndex].report_count || 0) + 1
       } else {
-        // Add new chadabaz with initial report count
         acc.push({
           id: current.id,
           name: current.name,
-          location: current.location,
-          party_id: current.party_id,
-          party_name: current.parties?.name, // Get party name from joined table
-          profile_pic_url: current.profile_pic_url,
-          facebook_url: current.facebook_url,
-          twitter_url: current.twitter_url,
-          instagram_url: current.instagram_url,
-          linkedin_url: current.linkedin_url,
-          youtube_url: current.youtube_url,
-          tiktok_url: current.tiktok_url,
+          area: current.area,
+          political_party_id: current.political_party_id,
+          party_name: current.party?.name,
+          profile_picture: current.profile_picture,
+          facebook_link: current.facebook_link,
+          description: current.description,
+          approved_status: current.approved_status,
           created_at: current.created_at,
           updated_at: current.updated_at,
           report_count: 1,
@@ -125,7 +58,6 @@ export async function getChadabazList(): Promise<Chadabaz[]> {
       return acc
     }, [])
 
-    // Sort by report count (highest first), then by creation date
     return chadabazWithCounts.sort((a, b) => {
       if ((b.report_count || 0) !== (a.report_count || 0)) {
         return (b.report_count || 0) - (a.report_count || 0)
@@ -147,15 +79,15 @@ export async function getPartyStatistics(): Promise<{ party: string; totalReport
   }
 
   try {
-    // Get all chadabaz with their approved reports, joining with parties table
     const { data, error } = await supabase
       .from("chadabaz")
       .select(`
         id,
-        parties(name),
-        reports!inner(status)
+        party(name),
+        report!inner(status)
       `)
-      .eq("reports.status", "approved")
+      .eq("approved_status", true)
+      .eq("report.status", "approved")
 
     if (error) {
       console.error("Error fetching party statistics:", error)
@@ -166,9 +98,8 @@ export async function getPartyStatistics(): Promise<{ party: string; totalReport
       return []
     }
 
-    // Group by party name and count reports and unique members
     const partyStats = data.reduce((acc: any, current: any) => {
-      const partyName = current.parties?.name || "Unknown Party" // Use party name from join
+      const partyName = current.party?.name || "Unknown Party"
       if (!acc[partyName]) {
         acc[partyName] = {
           party: partyName,
@@ -183,14 +114,12 @@ export async function getPartyStatistics(): Promise<{ party: string; totalReport
       return acc
     }, {})
 
-    // Convert to array and calculate member counts
     const result = Object.values(partyStats).map((stat: any) => ({
       party: stat.party,
       totalReports: stat.totalReports,
       memberCount: stat.members.size,
     }))
 
-    // Sort by total reports (highest first)
     return result.sort((a: any, b: any) => b.totalReports - a.totalReports)
   } catch (error) {
     console.error("Error in getPartyStatistics:", error)
@@ -207,12 +136,11 @@ export async function getChadabazProfile(id: string): Promise<ChadabazWithReport
   }
 
   try {
-    // Get chadabaz profile and party name
     const { data: chadabaz, error: chadabazError } = await supabase
       .from("chadabaz")
       .select(`
         *,
-        parties(name)
+        party(name)
       `)
       .eq("id", id)
       .single()
@@ -222,23 +150,21 @@ export async function getChadabazProfile(id: string): Promise<ChadabazWithReport
       return null
     }
 
-    // Get approved reports for this chadabaz
     const { data: reports, error: reportsError } = await supabase
-      .from("reports")
+      .from("report")
       .select("*")
       .eq("chadabaz_id", id)
       .eq("status", "approved")
-      .order("created_at", { ascending: false })
+      .order("submitted_at", { ascending: false })
 
     if (reportsError) {
       console.error("Error fetching reports:", reportsError)
       return { ...chadabaz, reports: [] } as ChadabazWithReports
     }
 
-    // Map chadabaz data to include party_name
     const chadabazWithPartyName: Chadabaz = {
       ...chadabaz,
-      party_name: (chadabaz as any).parties?.name, // Access party name from joined data
+      party_name: (chadabaz as any).party?.name,
     }
 
     return { ...chadabazWithPartyName, reports: reports || [] } as ChadabazWithReports
@@ -261,18 +187,18 @@ export async function searchChadabaz(query: string, partyName?: string): Promise
       .from("chadabaz")
       .select(`
         *,
-        parties(name),
-        reports!inner(status)
+        party(name),
+        report!inner(status)
       `)
-      .eq("reports.status", "approved")
+      .eq("approved_status", true)
+      .eq("report.status", "approved")
 
     if (query) {
-      queryBuilder = queryBuilder.or(`name.ilike.%${query}%,location.ilike.%${query}%`)
+      queryBuilder = queryBuilder.or(`name.ilike.%${query}%,area.ilike.%${query}%`)
     }
 
     if (partyName && partyName !== "all") {
-      // Filter by party name from the joined parties table
-      queryBuilder = queryBuilder.eq("parties.name", partyName)
+      queryBuilder = queryBuilder.eq("party.name", partyName)
     }
 
     const { data, error } = await queryBuilder.order("created_at", { ascending: false })
@@ -286,28 +212,22 @@ export async function searchChadabaz(query: string, partyName?: string): Promise
       return []
     }
 
-    // Group by chadabaz and count reports
     const chadabazWithCounts = data.reduce((acc: Chadabaz[], current: any) => {
       const existingIndex = acc.findIndex((item) => item.id === current.id)
 
       if (existingIndex >= 0) {
-        // Increment report count for existing chadabaz
         acc[existingIndex].report_count = (acc[existingIndex].report_count || 0) + 1
       } else {
-        // Add new chadabaz with initial report count
         acc.push({
           id: current.id,
           name: current.name,
-          location: current.location,
-          party_id: current.party_id,
-          party_name: current.parties?.name, // Get party name from joined table
-          profile_pic_url: current.profile_pic_url,
-          facebook_url: current.facebook_url,
-          twitter_url: current.twitter_url,
-          instagram_url: current.instagram_url,
-          linkedin_url: current.linkedin_url,
-          youtube_url: current.youtube_url,
-          tiktok_url: current.tiktok_url,
+          area: current.area,
+          political_party_id: current.political_party_id,
+          party_name: current.party?.name,
+          profile_picture: current.profile_picture,
+          facebook_link: current.facebook_link,
+          description: current.description,
+          approved_status: current.approved_status,
           created_at: current.created_at,
           updated_at: current.updated_at,
           report_count: 1,
@@ -316,7 +236,6 @@ export async function searchChadabaz(query: string, partyName?: string): Promise
       return acc
     }, [])
 
-    // Sort by report count (highest first), then by creation date
     return chadabazWithCounts.sort((a, b) => {
       if ((b.report_count || 0) !== (a.report_count || 0)) {
         return (b.report_count || 0) - (a.report_count || 0)
@@ -330,57 +249,57 @@ export async function searchChadabaz(query: string, partyName?: string): Promise
 }
 
 export async function submitReport(formData: FormData) {
-  const supabase = await createClient()
+  const supabaseAdmin = createSupabaseAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        persistSession: false, // Important for server-side admin client
+      },
+    },
+  )
 
-  if (!supabase) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error(
+      "Supabase environment variables (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY) are not configured for admin client.",
+    )
     return {
       success: false,
-      message: "ডেটাবেস সংযোগ নেই। অনুগ্রহ করে পরে চেষ্টা করুন।",
+      message: "সার্ভার কনফিগারেশন ত্রুটি। অনুগ্রহ করে পরে চেষ্টা করুন।",
     }
   }
 
   const name = formData.get("name") as string
-  const location = formData.get("location") as string
-  const partyName = formData.get("party") as string // Get party name from form
-  const description = formData.get("description") as string
-  const profilePicture = formData.get("profile_picture") as File
+  const area = formData.get("area") as string
+  const partyName = formData.get("party") as string
+  const chadabazDescription = formData.get("chadabaz_description") as string
+  const reportText = formData.get("report_text") as string
+  const profilePictureFile = formData.get("profile_picture") as File
+  const facebook_link = formData.get("facebook_link") as string
 
-  // Get social media URLs
-  const facebook_url = formData.get("facebook_url") as string
-  const twitter_url = formData.get("twitter_url") as string
-  const instagram_url = formData.get("instagram_url") as string
-  const linkedin_url = formData.get("linkedin_url") as string
-  const youtube_url = formData.get("youtube_url") as string
-  const tiktok_url = formData.get("tiktok_url") as string
-
-  // Get all media files
-  const mediaFiles: File[] = []
-  let index = 0
-  while (formData.get(`media_${index}`)) {
-    mediaFiles.push(formData.get(`media_${index}`) as File)
-    index++
-  }
+  // Get media files from FormData
+  const mediaFiles = formData.getAll("media_files") as File[]
+  const validMediaFiles = mediaFiles.filter((file) => file.size > 0) // Filter out empty files
 
   try {
     // 1. Find or create party
-    let partyId: string
-    const { data: existingParty, error: partyError } = await supabase
-      .from("parties")
+    let politicalPartyId: string
+    const { data: existingParty, error: partyError } = await supabaseAdmin
+      .from("party")
       .select("id")
       .eq("name", partyName)
       .single()
 
     if (partyError && partyError.code !== "PGRST116") {
-      // PGRST116 means no rows found
       console.error("Error checking existing party:", partyError)
       throw partyError
     }
 
     if (existingParty) {
-      partyId = existingParty.id
+      politicalPartyId = existingParty.id
     } else {
-      const { data: newParty, error: insertPartyError } = await supabase
-        .from("parties")
+      const { data: newParty, error: insertPartyError } = await supabaseAdmin
+        .from("party")
         .insert({ name: partyName })
         .select("id")
         .single()
@@ -389,15 +308,15 @@ export async function submitReport(formData: FormData) {
         console.error("Error creating new party:", insertPartyError)
         throw insertPartyError
       }
-      partyId = newParty.id
+      politicalPartyId = newParty.id
     }
 
     // 2. Check if chadabaz already exists
-    const { data: existingChadabaz } = await supabase
+    const { data: existingChadabaz } = await supabaseAdmin
       .from("chadabaz")
       .select("id")
       .eq("name", name)
-      .eq("location", location)
+      .eq("area", area)
       .single()
 
     let chadabazId: string
@@ -406,35 +325,32 @@ export async function submitReport(formData: FormData) {
       chadabazId = existingChadabaz.id
     } else {
       // Upload profile picture if provided
-      let profilePicUrl = null
-      if (profilePicture && profilePicture.size > 0) {
-        const fileExt = profilePicture.name.split(".").pop()
+      let profilePictureUrl = null
+      if (profilePictureFile && profilePictureFile.size > 0) {
+        const fileExt = profilePictureFile.name.split(".").pop()
         const fileName = `profile_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
 
-        const { error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabaseAdmin.storage
           .from("chadabaz-media")
-          .upload(`profiles/${fileName}`, profilePicture)
+          .upload(`profiles/${fileName}`, profilePictureFile)
 
         if (!uploadError) {
-          const { data } = supabase.storage.from("chadabaz-media").getPublicUrl(`profiles/${fileName}`)
-          profilePicUrl = data.publicUrl
+          const { data } = supabaseAdmin.storage.from("chadabaz-media").getPublicUrl(`profiles/${fileName}`)
+          profilePictureUrl = data.publicUrl
         }
       }
 
-      // Create new chadabaz with social media URLs and party_id
-      const { data: newChadabaz, error: chadabazError } = await supabase
+      // Create new chadabaz
+      const { data: newChadabaz, error: chadabazError } = await supabaseAdmin
         .from("chadabaz")
         .insert({
           name,
-          location,
-          party_id: partyId, // Use the resolved partyId
-          profile_pic_url: profilePicUrl,
-          facebook_url: facebook_url || null,
-          twitter_url: twitter_url || null,
-          instagram_url: instagram_url || null,
-          linkedin_url: linkedin_url || null,
-          youtube_url: youtube_url || null,
-          tiktok_url: tiktok_url || null,
+          area,
+          political_party_id: politicalPartyId,
+          profile_picture: profilePictureUrl,
+          facebook_link: facebook_link || null,
+          description: chadabazDescription || null,
+          approved_status: false,
         })
         .select("id")
         .single()
@@ -447,28 +363,34 @@ export async function submitReport(formData: FormData) {
       chadabazId = newChadabaz.id
     }
 
-    // Upload media files
+    // 3. Upload media files for the report
     const mediaUrls: string[] = []
-    for (const file of mediaFiles) {
-      if (file && file.size > 0) {
-        const fileExt = file.name.split(".").pop()
-        const fileName = `media_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+    for (const file of validMediaFiles) {
+      const fileExt = file.name.split(".").pop()
+      const fileName = `report_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `reports/${fileName}`
 
-        const { error: uploadError } = await supabase.storage.from("chadabaz-media").upload(`reports/${fileName}`, file)
+      const { error: uploadError } = await supabaseAdmin.storage.from("chadabaz-media").upload(filePath, file)
 
-        if (!uploadError) {
-          const { data } = supabase.storage.from("chadabaz-media").getPublicUrl(`reports/${fileName}`)
-          mediaUrls.push(data.publicUrl)
-        }
+      if (uploadError) {
+        console.error(`Error uploading media file ${file.name}:`, uploadError)
+        // Decide whether to throw or continue without this file
+        continue
+      }
+
+      const { data } = supabaseAdmin.storage.from("chadabaz-media").getPublicUrl(filePath)
+      if (data?.publicUrl) {
+        mediaUrls.push(data.publicUrl)
       }
     }
 
-    // Create report
-    const { error: reportError } = await supabase.from("reports").insert({
+    // 4. Create report with media_urls
+    const { error: reportError } = await supabaseAdmin.from("report").insert({
       chadabaz_id: chadabazId,
-      description,
-      media_urls: mediaUrls,
+      report_text: reportText,
+      media_urls: mediaUrls.length > 0 ? mediaUrls : null, // Store uploaded media URLs
       status: "pending",
+      submitted_by: null,
     })
 
     if (reportError) {
@@ -479,6 +401,8 @@ export async function submitReport(formData: FormData) {
     revalidatePath("/")
     revalidatePath("/search")
     revalidatePath("/PTF/dashboard")
+    revalidatePath("/PTF/pending-reports") // Revalidate new path
+    revalidatePath("/PTF/all-reports") // Revalidate new path
     return { success: true, message: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে। পর্যালোচনার পর এটি প্রকাশিত হবে।" }
   } catch (error) {
     console.error("Error submitting report:", error)
@@ -496,36 +420,33 @@ export async function getAdminReports(): Promise<AdminReport[]> {
 
   try {
     const { data, error } = await supabase
-      .from("reports")
+      .from("report")
       .select(`
         *,
         chadabaz (
           name,
-          location,
-          party_id,
-          facebook_url,
-          twitter_url,
-          instagram_url,
-          linkedin_url,
-          youtube_url,
-          tiktok_url,
-          parties(name)
+          area,
+          political_party_id,
+          profile_picture,
+          facebook_link,
+          description,
+          approved_status,
+          party(name)
         )
       `)
-      .order("created_at", { ascending: false })
+      .order("submitted_at", { ascending: false })
 
     if (error) {
       console.error("Error fetching admin reports:", error)
       return []
     }
 
-    // Map data to include party_name directly in chadabaz object
     const mappedData: AdminReport[] = data.map((report: any) => ({
       ...report,
       chadabaz: report.chadabaz
         ? {
             ...report.chadabaz,
-            party_name: report.chadabaz.parties?.name,
+            party_name: report.chadabaz.party?.name,
           }
         : null,
     }))
@@ -537,24 +458,126 @@ export async function getAdminReports(): Promise<AdminReport[]> {
   }
 }
 
-export async function updateReportStatus(reportId: string, status: "approved" | "rejected") {
+export async function getPendingReports(): Promise<AdminReport[]> {
   const supabase = await createClient()
 
   if (!supabase) {
+    return []
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("report")
+      .select(`
+        *,
+        chadabaz (
+          name,
+          area,
+          political_party_id,
+          profile_picture,
+          facebook_link,
+          description,
+          approved_status,
+          party(name)
+        )
+      `)
+      .eq("status", "pending") // Filter for pending reports
+      .order("submitted_at", { ascending: false })
+
+    if (error) {
+      console.error("Error fetching pending reports:", error)
+      return []
+    }
+    const mappedData: AdminReport[] = data.map((report: any) => ({
+      ...report,
+      chadabaz: report.chadabaz
+        ? {
+            ...report.chadabaz,
+            party_name: report.chadabaz.party?.name,
+          }
+        : null,
+    }))
+    return mappedData || []
+  } catch (error) {
+    console.error("Error in getPendingReports:", error)
+    return []
+  }
+}
+
+export async function getDashboardStats(): Promise<DashboardStats | null> {
+  const supabase = await createClient()
+
+  if (!supabase) {
+    console.log("Supabase not configured")
+    return null
+  }
+
+  try {
+    const { data, error } = await supabase.from("admin_stats").select("*").single() // admin_stats is a view that returns a single row
+
+    if (error) {
+      console.error("Error fetching admin dashboard stats:", error)
+      return null
+    }
+
+    return data
+  } catch (error) {
+    console.error("Error in getDashboardStats:", error)
+    return null
+  }
+}
+
+export async function updateReportStatus(reportId: string, status: "approved" | "rejected") {
+  const supabaseAdmin = createSupabaseAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  )
+
+  if (!supabaseAdmin) {
     return { success: false, message: "ডেটাবেস সংযোগ নেই।" }
   }
 
   try {
-    const { error } = await supabase.from("reports").update({ status }).eq("id", reportId)
+    // Get the report to find chadabaz_id
+    const { data: reportData, error: fetchReportError } = await supabaseAdmin
+      .from("report")
+      .select("chadabaz_id")
+      .single()
 
-    if (error) {
-      console.error("Error updating report status:", error)
-      throw error
+    if (fetchReportError || !reportData) {
+      console.error("Error fetching report for status update:", fetchReportError)
+      throw fetchReportError
+    }
+
+    const chadabazId = reportData.chadabaz_id
+
+    // Update report status
+    const { error: updateReportError } = await supabaseAdmin.from("report").update({ status }).eq("id", reportId)
+
+    if (updateReportError) {
+      console.error("Error updating report status:", updateReportError)
+      throw updateReportError
+    }
+
+    // If approved, update chadabaz approved_status
+    if (status === "approved" && chadabazId) {
+      const { error: updateChadabazError } = await supabaseAdmin
+        .from("chadabaz")
+        .update({ approved_status: true })
+        .eq("id", chadabazId)
+
+      if (updateChadabazError) {
+        console.error("Error updating chadabaz approved_status:", updateChadabazError)
+        throw updateChadabazError
+      }
     }
 
     revalidatePath("/")
     revalidatePath("/search")
     revalidatePath("/PTF/dashboard")
+    revalidatePath("/PTF/pending-reports")
+    revalidatePath("/PTF/all-reports")
 
     return {
       success: true,
@@ -574,7 +597,7 @@ export async function deleteReport(reportId: string) {
   }
 
   try {
-    const { error } = await supabase.from("reports").delete().eq("id", reportId)
+    const { error } = await supabase.from("report").delete().eq("id", reportId)
 
     if (error) {
       console.error("Error deleting report:", error)
@@ -584,6 +607,8 @@ export async function deleteReport(reportId: string) {
     revalidatePath("/")
     revalidatePath("/search")
     revalidatePath("/PTF/dashboard")
+    revalidatePath("/PTF/pending-reports") // Revalidate new path
+    revalidatePath("/PTF/all-reports") // Revalidate new path
 
     return { success: true, message: "রিপোর্ট মুছে দেওয়া হয়েছে।" }
   } catch (error) {

@@ -1,23 +1,22 @@
 "use client"
-
-import { useState } from "react"
 import { getChadabazProfile } from "@/lib/actions"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { MediaViewer } from "@/components/media-viewer"
-import { MapPin, Users, Calendar, FileText, Play, Eye } from "lucide-react"
+import { MapPin, Users, Calendar, FileText, Play } from "lucide-react" // Re-added Play icon
 import { notFound } from "next/navigation"
 import { SocialMediaLinks } from "@/components/social-media-links"
-import type { ChadabazWithReports } from "@/lib/types" // Import ChadabazWithReports
+import { MediaViewer } from "@/components/media-viewer" // Re-added MediaViewer import
+import { useState } from "react" // Added useState import
+import type { ChadabazWithReports } from "@/lib/types"
 
 interface ProfilePageProps {
-  params: { id: string } // Changed to direct object for params
+  params: { id: string }
 }
 
 export default async function ProfilePage({ params }: ProfilePageProps) {
   const { id } = params
-  const profile: ChadabazWithReports | null = await getChadabazProfile(id) // Explicitly type profile
+  const profile: ChadabazWithReports | null = await getChadabazProfile(id)
 
   if (!profile) {
     notFound()
@@ -42,9 +41,9 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
             <CardContent className="p-8">
               <div className="flex flex-col md:flex-row items-center md:items-start space-y-6 md:space-y-0 md:space-x-8">
                 <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
-                  {profile.profile_pic_url ? (
+                  {profile.profile_picture ? (
                     <img
-                      src={profile.profile_pic_url || "/placeholder.svg"}
+                      src={profile.profile_picture || "/placeholder.svg"}
                       alt={profile.name}
                       className="w-full h-full object-cover"
                     />
@@ -61,35 +60,27 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
                   <div className="space-y-3">
                     <div className="flex items-center justify-center md:justify-start text-gray-600">
                       <MapPin className="h-5 w-5 mr-2" />
-                      <span className="bangla-text">📍 এলাকা: {profile.location}</span>
+                      <span className="bangla-text">📍 এলাকা: {profile.area}</span>
                     </div>
 
                     <div className="flex items-center justify-center md:justify-start">
                       <span className="bangla-text mr-2">🏳️ রাজনৈতিক দল:</span>
                       <Badge variant="outline" className="bangla-text">
-                        {profile.party_name} {/* Use party_name */}
+                        {profile.party_name}
                       </Badge>
                     </div>
 
-                    {/* Add social media links */}
-                    {(profile.facebook_url ||
-                      profile.twitter_url ||
-                      profile.instagram_url ||
-                      profile.linkedin_url ||
-                      profile.youtube_url ||
-                      profile.tiktok_url) && (
+                    {profile.description && (
+                      <div className="pt-4 border-t">
+                        <h4 className="text-sm font-medium text-gray-700 mb-3 bangla-text">সম্পর্কে:</h4>
+                        <p className="text-gray-700 whitespace-pre-wrap bangla-text">{profile.description}</p>
+                      </div>
+                    )}
+
+                    {profile.facebook_link && (
                       <div className="pt-4 border-t">
                         <h4 className="text-sm font-medium text-gray-700 mb-3 bangla-text">সোশ্যাল মিডিয়া প্রোফাইল:</h4>
-                        <SocialMediaLinks
-                          facebook_url={profile.facebook_url}
-                          twitter_url={profile.twitter_url}
-                          instagram_url={profile.instagram_url}
-                          linkedin_url={profile.linkedin_url}
-                          youtube_url={profile.youtube_url}
-                          tiktok_url={profile.tiktok_url}
-                          size="md"
-                          showLabels={true}
-                        />
+                        <SocialMediaLinks facebook_link={profile.facebook_link} size="md" showLabels={true} />
                       </div>
                     )}
                   </div>
@@ -128,13 +119,11 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
 }
 
 function ReportCard({ report, formatDate }: { report: any; formatDate: (date: string) => string }) {
-  const [selectedMedia, setSelectedMedia] = useState<string[]>([])
   const [isMediaViewerOpen, setIsMediaViewerOpen] = useState(false)
-  const [selectedMediaIndex, setSelectedMediaIndex] = useState(0)
+  const [currentMediaIndex, setCurrentMediaIndex] = useState(0)
 
-  const openMediaViewer = (mediaUrls: string[], index = 0) => {
-    setSelectedMedia(mediaUrls)
-    setSelectedMediaIndex(index)
+  const openMediaViewer = (index: number) => {
+    setCurrentMediaIndex(index)
     setIsMediaViewerOpen(true)
   }
 
@@ -143,65 +132,51 @@ function ReportCard({ report, formatDate }: { report: any; formatDate: (date: st
       <div className="border-l-4 border-red-500 pl-6 pb-6">
         <div className="flex items-center space-x-2 mb-3">
           <Calendar className="h-4 w-4 text-gray-500" />
-          <span className="text-sm text-gray-600 bangla-text">📅 রিপোর্টের তারিখ: {formatDate(report.created_at)}</span>
+          <span className="text-sm text-gray-600 bangla-text">📅 রিপোর্টের তারিখ: {formatDate(report.submitted_at)}</span>
         </div>
 
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
           <h4 className="font-semibold mb-2 bangla-text">রিপোর্টকারীর বিবরণ:</h4>
-          <p className="text-gray-700 whitespace-pre-wrap bangla-text">{report.description}</p>
+          <p className="text-gray-700 whitespace-pre-wrap bangla-text">{report.report_text}</p>
         </div>
 
-        {report.media_urls.length > 0 && (
-          <div>
-            <h4 className="font-semibold mb-3 bangla-text">সংযুক্ত প্রমাণ ({report.media_urls.length}টি):</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {report.media_urls.map((url: string, index: number) => {
-                const isVideo = url.match(/\.(mp4|webm|mov|avi)$/i)
-                const isImage = url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-
-                return (
-                  <div
-                    key={index}
-                    className="relative group cursor-pointer border rounded-lg overflow-hidden hover:shadow-md transition-shadow aspect-square"
-                    onClick={() => openMediaViewer(report.media_urls, index)}
-                  >
-                    {isImage && (
-                      <img
-                        src={url || "/placeholder.svg"}
-                        alt={`প্রমাণ ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                    {isVideo && (
-                      <div className="relative w-full h-full bg-gray-200 flex items-center justify-center">
-                        <video src={url} className="w-full h-full object-cover" muted />
-                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                          <Play className="h-8 w-8 text-white" />
-                        </div>
-                      </div>
-                    )}
-                    {!isImage && !isVideo && (
-                      <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                        <FileText className="h-8 w-8 text-gray-500" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                      <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
+        {/* Media display section re-added */}
+        {report.media_urls && report.media_urls.length > 0 && (
+          <div className="mb-4">
+            <h4 className="font-medium text-gray-900 mb-2 bangla-text">প্রমাণ:</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {report.media_urls.map((url: string, index: number) => (
+                <div
+                  key={index}
+                  className="relative w-full aspect-video rounded-md overflow-hidden bg-gray-200 cursor-pointer"
+                  onClick={() => openMediaViewer(index)}
+                >
+                  {url.match(/\.(mp4|webm|mov|avi)$/i) ? (
+                    <video src={url} className="w-full h-full object-cover" />
+                  ) : (
+                    <img
+                      src={url || "/placeholder.svg"}
+                      alt={`Proof ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 hover:opacity-100 transition-opacity">
+                    <Play className="h-8 w-8 text-white" />
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
-
-      <MediaViewer
-        mediaUrls={selectedMedia}
-        isOpen={isMediaViewerOpen}
-        onClose={() => setIsMediaViewerOpen(false)}
-        initialIndex={selectedMediaIndex}
-      />
+      {isMediaViewerOpen && report.media_urls && report.media_urls.length > 0 && (
+        <MediaViewer
+          mediaUrls={report.media_urls}
+          isOpen={isMediaViewerOpen}
+          onClose={() => setIsMediaViewerOpen(false)}
+          initialIndex={currentMediaIndex}
+        />
+      )}
     </>
   )
 }

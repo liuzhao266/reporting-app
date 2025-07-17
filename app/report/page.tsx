@@ -12,20 +12,22 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/utils/supabase/client"
-import { Upload, FileText, AlertCircle, Plus, X } from "lucide-react"
+import { FileText, AlertCircle, X } from "lucide-react" // Added Upload and X icons
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { submitReport } from "@/lib/actions" // Ensure submitReport is imported
+import { submitReport } from "@/lib/actions"
 
 export default function ReportPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
-    location: "",
-    party: "", // Initialize party as an empty string (will hold party name)
-    description: "",
+    area: "",
+    party: "",
+    chadabaz_description: "",
+    report_text: "",
+    facebook_link: "",
   })
-  const [mediaFiles, setMediaFiles] = useState<File[]>([])
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]) // Re-added mediaFiles state
   const { toast } = useToast()
   const router = useRouter()
   const supabase = createClient()
@@ -35,12 +37,13 @@ export default function ReportPage() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleMediaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    setMediaFiles((prev) => [...prev, ...files])
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setMediaFiles(Array.from(e.target.files))
+    }
   }
 
-  const removeMediaFile = (index: number) => {
+  const handleRemoveFile = (index: number) => {
     setMediaFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
@@ -48,8 +51,13 @@ export default function ReportPage() {
     e.preventDefault()
     setIsSubmitting(true)
 
-    // Client-side validation for required fields
-    if (!formData.name.trim() || !formData.location.trim() || !formData.description.trim()) {
+    if (
+      !formData.name.trim() ||
+      !formData.area.trim() ||
+      !formData.report_text.trim() ||
+      !formData.party ||
+      formData.party === ""
+    ) {
       toast({
         title: "ত্রুটি!",
         description: "অনুগ্রহ করে সকল প্রয়োজনীয় ফিল্ড পূরণ করুন।",
@@ -59,27 +67,18 @@ export default function ReportPage() {
       return
     }
 
-    // Client-side validation for party
-    if (!formData.party || formData.party === "") {
-      toast({
-        title: "ত্রুটি!",
-        description: "অনুগ্রহ করে রাজনৈতিক দল নির্বাচন করুন।",
-        variant: "destructive",
-      })
-      setIsSubmitting(false)
-      return
-    }
-
     const form = e.currentTarget
     const data = new FormData(form)
 
-    // Explicitly append the party value from state, as shadcn Select is not a native input
-    // that FormData automatically picks up by name.
     data.append("party", formData.party)
+    data.append("area", formData.area)
+    data.append("chadabaz_description", formData.chadabaz_description)
+    data.append("report_text", formData.report_text)
+    data.append("facebook_link", formData.facebook_link)
 
-    // Add media files to form data
-    mediaFiles.forEach((file, index) => {
-      data.append(`media_${index}`, file)
+    // Append media files
+    mediaFiles.forEach((file) => {
+      data.append("media_files", file)
     })
 
     try {
@@ -91,11 +90,16 @@ export default function ReportPage() {
           description: result.message,
         })
 
-        // Reset form
-        setFormData({ name: "", location: "", party: "", description: "" })
-        setMediaFiles([])
+        setFormData({
+          name: "",
+          area: "",
+          party: "",
+          chadabaz_description: "",
+          report_text: "",
+          facebook_link: "",
+        })
+        setMediaFiles([]) // Reset media files
 
-        // Redirect to home page
         router.push("/")
       } else {
         toast({
@@ -160,13 +164,13 @@ export default function ReportPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location" className="bangla-text">
+                  <Label htmlFor="area" className="bangla-text">
                     এলাকা *
                   </Label>
                   <Input
-                    id="location"
-                    name="location"
-                    value={formData.location}
+                    id="area"
+                    name="area"
+                    value={formData.area}
                     onChange={handleInputChange}
                     placeholder="কোন এলাকায় এই ঘটনা ঘটেছে?"
                     required
@@ -183,8 +187,6 @@ export default function ReportPage() {
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, party: value }))}
                   >
                     <SelectTrigger className="bangla-text" name="party">
-                      {" "}
-                      {/* Added name attribute here */}
                       <SelectValue placeholder="রাজনৈতিক দল নির্বাচন করুন" />
                     </SelectTrigger>
                     <SelectContent>
@@ -252,85 +254,38 @@ export default function ReportPage() {
                   </Select>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="chadabaz_description" className="bangla-text">
+                    চাঁদাবাজের সাধারণ বিবরণ (ঐচ্ছিক)
+                  </Label>
+                  <Textarea
+                    id="chadabaz_description"
+                    name="chadabaz_description"
+                    value={formData.chadabaz_description}
+                    onChange={handleInputChange}
+                    placeholder="চাঁদাবাজ সম্পর্কে একটি সাধারণ বিবরণ দিন (যেমন: তার কার্যকলাপ, পরিচিতি)"
+                    rows={3}
+                    className="bangla-text"
+                  />
+                  <p className="text-sm text-gray-600 bangla-text">এটি চাঁদাবাজের প্রোফাইলে প্রদর্শিত হবে।</p>
+                </div>
+
                 <div className="space-y-4">
                   <h4 className="font-medium text-gray-900 bangla-text">সোশ্যাল মিডিয়া লিংক (ঐচ্ছিক)</h4>
                   <p className="text-sm text-gray-600 bangla-text">চাঁদাবাজের সোশ্যাল মিডিয়া প্রোফাইল লিংক যোগ করুন যদি জানা থাকে</p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="facebook_url" className="bangla-text">
+                      <Label htmlFor="facebook_link" className="bangla-text">
                         ফেসবুক প্রোফাইল
                       </Label>
                       <Input
-                        id="facebook_url"
-                        name="facebook_url"
+                        id="facebook_link"
+                        name="facebook_link"
                         type="url"
+                        value={formData.facebook_link}
+                        onChange={handleInputChange}
                         placeholder="https://facebook.com/username"
-                        className="bangla-text"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="twitter_url" className="bangla-text">
-                        টুইটার/X প্রোফাইল
-                      </Label>
-                      <Input
-                        id="twitter_url"
-                        name="twitter_url"
-                        type="url"
-                        placeholder="https://twitter.com/username"
-                        className="bangla-text"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="instagram_url" className="bangla-text">
-                        ইনস্টাগ্রাম প্রোফাইল
-                      </Label>
-                      <Input
-                        id="instagram_url"
-                        name="instagram_url"
-                        type="url"
-                        placeholder="https://instagram.com/username"
-                        className="bangla-text"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="linkedin_url" className="bangla-text">
-                        লিংকডইন প্রোফাইল
-                      </Label>
-                      <Input
-                        id="linkedin_url"
-                        name="linkedin_url"
-                        type="url"
-                        placeholder="https://linkedin.com/in/username"
-                        className="bangla-text"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="youtube_url" className="bangla-text">
-                        ইউটিউব চ্যানেল
-                      </Label>
-                      <Input
-                        id="youtube_url"
-                        name="youtube_url"
-                        type="url"
-                        placeholder="https://youtube.com/@username"
-                        className="bangla-text"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="tiktok_url" className="bangla-text">
-                        টিকটক প্রোফাইল
-                      </Label>
-                      <Input
-                        id="tiktok_url"
-                        name="tiktok_url"
-                        type="url"
-                        placeholder="https://tiktok.com/@username"
                         className="bangla-text"
                       />
                     </div>
@@ -346,19 +301,21 @@ export default function ReportPage() {
                     name="profile_picture"
                     type="file"
                     accept="image/*"
-                    onChange={(e) => handleInputChange(e)}
+                    onChange={(e) => {
+                      // This input is for a single file, so no need for array handling
+                    }}
                   />
                   <p className="text-sm text-gray-600 bangla-text">চাঁদাবাজের ছবি আপলোড করুন (ঐচ্ছিক)</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="description" className="bangla-text">
+                  <Label htmlFor="report_text" className="bangla-text">
                     রিপোর্ট বিবরণ *
                   </Label>
                   <Textarea
-                    id="description"
-                    name="description"
-                    value={formData.description}
+                    id="report_text"
+                    name="report_text"
+                    value={formData.report_text}
                     onChange={handleInputChange}
                     placeholder="কী ঘটেছিল তার বিস্তারিত বর্ণনা দিন..."
                     rows={6}
@@ -367,36 +324,33 @@ export default function ReportPage() {
                   />
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Label className="bangla-text">প্রমাণ ফাইল (ঐচ্ছিক)</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => document.getElementById("media-upload")?.click()}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      <span className="bangla-text">ফাইল যোগ করুন</span>
-                    </Button>
-                  </div>
-
-                  <input
-                    id="media-upload"
+                {/* Re-added Media file upload section */}
+                <div className="space-y-2">
+                  <Label htmlFor="media_files" className="bangla-text">
+                    প্রমাণ (ছবি/ভিডিও) (ঐচ্ছিক)
+                  </Label>
+                  <Input
+                    id="media_files"
+                    name="media_files"
                     type="file"
-                    multiple
                     accept="image/*,video/*"
-                    onChange={handleMediaFileChange}
-                    className="hidden"
+                    multiple
+                    onChange={handleFileChange}
                   />
-
+                  <p className="text-sm text-gray-600 bangla-text">ঘটনার ছবি বা ভিডিও আপলোড করুন (একাধিক ফাইল)</p>
                   {mediaFiles.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-gray-600 bangla-text">নির্বাচিত ফাইলসমূহ:</p>
+                    <div className="mt-2 space-y-2">
+                      <p className="text-sm font-medium bangla-text">আপলোড করা ফাইল:</p>
                       {mediaFiles.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between bg-gray-100 p-2 rounded">
-                          <span className="text-sm truncate">{file.name}</span>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => removeMediaFile(index)}>
+                        <div key={index} className="flex items-center justify-between bg-gray-100 p-2 rounded-md">
+                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveFile(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
@@ -408,7 +362,7 @@ export default function ReportPage() {
                 <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <>
-                      <Upload className="mr-2 h-4 w-4 animate-spin" />
+                      <FileText className="mr-2 h-4 w-4 animate-spin" />
                       <span className="bangla-text">জমা দেওয়া হচ্ছে...</span>
                     </>
                   ) : (

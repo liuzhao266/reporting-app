@@ -6,8 +6,8 @@ import { Navigation } from "@/components/navigation"
 import { Shield, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Chadabaz } from "@/lib/types"
-import { ChadabazCard } from "@/components/chadabaz-card" // Import ChadabazCard
-import { PartyStatistics } from "@/components/party-statistics" // Import PartyStatistics
+import { ChadabazCard } from "@/components/chadabaz-card"
+import { PartyStatistics } from "@/components/party-statistics"
 
 export default function HomePage() {
   const [chadabazList, setChadabazList] = useState<Chadabaz[]>([])

@@ -25,8 +25,12 @@ export async function middleware(request: NextRequest) {
     },
   )
 
-  // Check if accessing admin dashboard
-  if (request.nextUrl.pathname.startsWith("/PTF/dashboard")) {
+  // Check if accessing admin dashboard or any admin sub-route
+  if (
+    request.nextUrl.pathname.startsWith("/PTF/dashboard") ||
+    request.nextUrl.pathname.startsWith("/PTF/pending-reports") ||
+    request.nextUrl.pathname.startsWith("/PTF/all-reports")
+  ) {
     // Skip auth check if Supabase is not configured (for demo purposes)
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       return supabaseResponse
@@ -45,5 +49,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/PTF/dashboard/:path*"],
+  matcher: ["/PTF/dashboard/:path*", "/PTF/pending-reports/:path*", "/PTF/all-reports/:path*"],
 }

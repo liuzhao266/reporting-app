@@ -15,9 +15,9 @@ export function ChadabazCard({ chadabaz }: ChadabazCardProps) {
       <CardContent className="p-6">
         <div className="flex items-center space-x-4 mb-4">
           <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200 flex-shrink-0">
-            {chadabaz.profile_pic_url ? (
+            {chadabaz.profile_picture ? ( // Changed from profile_pic_url
               <img
-                src={chadabaz.profile_pic_url || "/placeholder.svg"}
+                src={chadabaz.profile_picture || "/placeholder.svg"} // Changed from profile_pic_url
                 alt={chadabaz.name}
                 className="w-full h-full object-cover"
               />
@@ -31,14 +31,14 @@ export function ChadabazCard({ chadabaz }: ChadabazCardProps) {
             <h3 className="font-semibold text-lg text-gray-900 truncate">{chadabaz.name}</h3>
             <div className="flex items-center text-gray-600 mt-1">
               <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
-              <span className="truncate">{chadabaz.location}</span>
+              <span className="truncate">{chadabaz.area}</span> {/* Changed from location */}
             </div>
           </div>
         </div>
 
         <div className="mb-4 space-y-2">
           <Badge variant="outline" className="text-sm">
-            {chadabaz.party_name} {/* Use party_name */}
+            {chadabaz.party_name}
           </Badge>
 
           {/* Add report count badge */}
