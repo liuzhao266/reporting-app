@@ -2,7 +2,7 @@
 
 import { createClient } from "@/utils/supabase/server"
 import { revalidatePath } from "next/cache"
-import type { Chadabaz, ChadabazWithReports, AdminReport, DashboardStats } from "./types" // Added DashboardStats
+import type { Chadabaz, ChadabazWithReports, AdminReport } from "./types"
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js"
 
 export async function getChadabazList(): Promise<Chadabaz[]> {
@@ -504,29 +504,6 @@ export async function getPendingReports(): Promise<AdminReport[]> {
   }
 }
 
-export async function getDashboardStats(): Promise<DashboardStats | null> {
-  const supabase = await createClient()
-
-  if (!supabase) {
-    console.log("Supabase not configured")
-    return null
-  }
-
-  try {
-    const { data, error } = await supabase.from("admin_stats").select("*").single() // admin_stats is a view that returns a single row
-
-    if (error) {
-      console.error("Error fetching admin dashboard stats:", error)
-      return null
-    }
-
-    return data
-  } catch (error) {
-    console.error("Error in getDashboardStats:", error)
-    return null
-  }
-}
-
 export async function updateReportStatus(reportId: string, status: "approved" | "rejected") {
   const supabaseAdmin = createSupabaseAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -543,6 +520,7 @@ export async function updateReportStatus(reportId: string, status: "approved" | 
     const { data: reportData, error: fetchReportError } = await supabaseAdmin
       .from("report")
       .select("chadabaz_id")
+      .eq("id", reportId)
       .single()
 
     if (fetchReportError || !reportData) {

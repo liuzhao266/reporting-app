@@ -3,16 +3,16 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/utils/supabase/client"
-import { getDashboardStats } from "@/lib/actions" // Will use this for stats
+import { getAdminReports } from "@/lib/actions" // Will use this for stats
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { FileText, Clock, CheckCircle, XCircle } from "lucide-react"
 import { AdminNavigation } from "@/components/admin-navigation" // New navigation component
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import type { DashboardStats } from "@/lib/types"
+import type { AdminReport } from "@/lib/types"
 
 export default function AdminDashboardOverview() {
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null)
+  const [reports, setReports] = useState<AdminReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const router = useRouter()
@@ -21,7 +21,7 @@ export default function AdminDashboardOverview() {
 
   useEffect(() => {
     checkAuth()
-    loadDashboardStats()
+    loadReports()
   }, [])
 
   const checkAuth = async () => {
@@ -39,16 +39,16 @@ export default function AdminDashboardOverview() {
     setUser(user)
   }
 
-  const loadDashboardStats = async () => {
+  const loadReports = async () => {
     setIsLoading(true)
     try {
-      const statsData = await getDashboardStats()
-      setDashboardStats(statsData)
+      const reportsData = await getAdminReports()
+      setReports(reportsData)
     } catch (error) {
       console.error("Error loading reports for dashboard stats:", error)
       toast({
         title: "ত্রুটি!",
-        description: "ড্যাশবোর্ড পরিসংখ্যান লোড করতে সমস্যা হয়েছে।",
+        description: "রিপোর্ট পরিসংখ্যান লোড করতে সমস্যা হয়েছে।",
         variant: "destructive",
       })
     } finally {
@@ -56,15 +56,14 @@ export default function AdminDashboardOverview() {
     }
   }
 
-  const stats = dashboardStats || {
-    total_reports: 0,
-    pending_reports: 0,
-    approved_reports: 0,
-    rejected_reports: 0,
-    total_chadabaz: 0,
+  const stats = {
+    total: reports.length,
+    pending: reports.filter((r) => r.status === "pending").length,
+    approved: reports.filter((r) => r.status === "approved").length,
+    rejected: reports.filter((r) => r.status === "rejected").length,
   }
 
-  if (isLoading || !user || !dashboardStats) {
+  if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
@@ -89,7 +88,7 @@ export default function AdminDashboardOverview() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.total_reports}</div>
+              <div className="text-2xl font-bold">{stats.total}</div>
             </CardContent>
           </Card>
 
@@ -99,7 +98,7 @@ export default function AdminDashboardOverview() {
               <Clock className="h-4 w-4 text-yellow-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">{stats.pending_reports}</div>
+              <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
             </CardContent>
           </Card>
 
@@ -109,7 +108,7 @@ export default function AdminDashboardOverview() {
               <CheckCircle className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{stats.approved_reports}</div>
+              <div className="text-2xl font-bold text-green-600">{stats.approved}</div>
             </CardContent>
           </Card>
 
@@ -119,7 +118,7 @@ export default function AdminDashboardOverview() {
               <XCircle className="h-4 w-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats.rejected_reports}</div>
+              <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
             </CardContent>
           </Card>
         </div>
